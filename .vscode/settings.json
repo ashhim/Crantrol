@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd .*\\\\esp32_firmware ; powershell -c \"& '\\$env:USERPROFILE\\\\\\.platformio\\\\penv\\\\Scripts\\\\pio\\.exe' run --verbose\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

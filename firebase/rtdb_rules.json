@@ -1,0 +1,170 @@
+{
+  "rules": {
+    "devices": {
+      "$deviceId": {
+        ".read": "auth != null",
+        "config": {
+          ".write": "auth != null",
+          ".validate": "newData.hasChildren(['deviceName', 'deviceId', 'roomId', 'relayCount', 'relays'])",
+          "deviceName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+          },
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val() === $deviceId"
+          },
+          "roomId": {
+            ".validate": "newData.isString()"
+          },
+          "roomCode": {
+            ".validate": "newData.isString()"
+          },
+          "relayCount": {
+            ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 10"
+          },
+          "relays": {
+            ".validate": "newData.hasChildren(['relay1', 'relay2', 'relay3', 'relay4', 'relay5', 'relay6', 'relay7', 'relay8', 'relay9', 'relay10'])",
+            "$relayId": {
+              ".validate": "newData.hasChildren(['id', 'name', 'pin', 'activeLow', 'pulseMs', 'enabled', 'state'])",
+              "id": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "name": {
+                ".validate": "newData.isString() && newData.val().length > 0"
+              },
+              "pin": {
+                ".validate": "newData.isNumber()"
+              },
+              "activeLow": {
+                ".validate": "newData.isBoolean()"
+              },
+              "pulseMs": {
+                ".validate": "newData.isNumber()"
+              },
+              "enabled": {
+                ".validate": "newData.isBoolean()"
+              },
+              "state": {
+                ".validate": "newData.isBoolean()"
+              }
+            }
+          }
+        },
+        "status": {
+          ".write": "auth != null",
+          "ethernetLinked": {
+            ".validate": "newData.isBoolean()"
+          },
+          "ethernetGotIp": {
+            ".validate": "newData.isBoolean()"
+          },
+          "internetOk": {
+            ".validate": "newData.isBoolean()"
+          },
+          "firebaseAuthenticated": {
+            ".validate": "newData.isBoolean()"
+          },
+          "lastSeenAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "heartbeatAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "uptimeMs": {
+            ".validate": "newData.isNumber()"
+          },
+          "deviceName": {
+            ".validate": "newData.isString()"
+          },
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val() === $deviceId"
+          },
+          "relays": {
+            ".validate": "newData.hasChildren(['relay1', 'relay2', 'relay3', 'relay4', 'relay5', 'relay6', 'relay7', 'relay8', 'relay9', 'relay10'])",
+            "$relayId": {
+              ".validate": "newData.hasChildren(['id', 'name', 'pin', 'activeLow', 'pulseMs', 'enabled', 'state'])",
+              "id": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "name": {
+                ".validate": "newData.isString() && newData.val().length > 0"
+              },
+              "pin": {
+                ".validate": "newData.isNumber()"
+              },
+              "activeLow": {
+                ".validate": "newData.isBoolean()"
+              },
+              "pulseMs": {
+                ".validate": "newData.isNumber()"
+              },
+              "enabled": {
+                ".validate": "newData.isBoolean()"
+              },
+              "state": {
+                ".validate": "newData.isBoolean()"
+              }
+            }
+          }
+        },
+        "desired": {
+          ".write": "auth != null",
+          "$relayId": {
+            "command": {
+              ".validate": "newData.isString() && (newData.val() === 'ON' || newData.val() === 'OFF' || newData.val() === 'PULSE')"
+            },
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "revision": {
+              ".validate": "newData.isString()"
+            }
+          }
+        },
+        "logs": {
+          ".write": "auth != null",
+          "$logId": {
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "message": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            }
+          }
+        }
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "roomCode": {
+          ".validate": "newData.isString()"
+        },
+        "devices": {
+          "$deviceId": {
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      }
+    },
+    "ota": {
+      "devices": {
+        "$deviceId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "system": {
+      "logs": {
+        "$deviceId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    }
+  }
+}

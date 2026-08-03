@@ -1,4 +1,67 @@
-# ✅ HashPC Project - Complete Delivery Summary
+# ✅ CRANTROL - Project Completion Summary
+
+This document summarizes the current state of the CRANTROL repository. All information below is taken from the source code in this workspace and reflects the exact runtime defaults and build behavior implemented by the firmware and app.
+
+Summary
+
+- Project: CRANTROL (Flutter mobile app + ESP32-S3-ETH firmware + Firebase Realtime Database)
+- Relay architecture: 10 relay slots (MAX_RELAYS = 10) with default slot definitions in esp32_firmware/include/pc_types.h
+- Firmware build: PlatformIO environment `esp32-s3-eth` (esp32_firmware/platformio.ini)
+- App build: Flutter project in `applicatoin/` (pubspec.yaml and assets/.env)
+
+Repository highlights (source of truth)
+
+- Firmware: esp32_firmware/include/* and esp32_firmware/src/* — default relay slots and pin mappings are defined in `pc_types.h` and `config.h`.
+- Flutter: applicatoin/lib/services/app_environment.dart reads environment from `assets/.env` (bundled) then falls back to `.env` via rootBundle. Firebase options are constructed from AppEnvironment values.
+- Build-time env injection for firmware: esp32_firmware/scripts/load_env.py reads repo-root `.env` and writes `.pio/generated_env.h` with FB_* defines for compilation.
+
+Default relay slots (from code)
+
+The firmware exposes 10 relay slots by default. The following defaults are defined in `esp32_firmware/include/pc_types.h` / `config.h`:
+
+- Relay 1 — "PC Power" — GPIO 21 (pulseMs: 350ms)
+- Relay 2 — "Monitor 1" — GPIO 17
+- Relay 3 — "Monitor 2" — GPIO 16
+- Relay 4 — "Motherboard Power Button" — GPIO 18 (pulseMs: 250ms)
+- Relay 5 — "Relay 5" — GPIO 15
+- Relay 6 — "Relay 6" — GPIO 3
+- Relay 7 — "Relay 7" — GPIO 2
+- Relay 8 — "Relay 8" — GPIO 1
+- Relay 9 — "Power" — GPIO 0 (pulse relay, pulseMs: 4000ms)
+- Relay 10 — "Reset" — GPIO 44 (pulse relay, pulseMs: 1000ms)
+
+Other hardware constants (from config.h)
+
+- BUZZER_PIN = 43
+- STATUS_LED_PIN = 47
+- NETWORK_LED_PIN = 48
+- RGB_LED_PIN = 46
+- Ethernet (W5500) SPI: MISO=12, MOSI=11, SCLK=13, CS=14, IRQ=10, RST=9
+- Default captive portal AP: SSID = "PC-Control-Setup", password = "12345678"
+
+Build & verification (what was performed here)
+
+- Flutter: `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build apk --debug` — verified working in this workspace.
+- Firmware: PlatformIO build using environment `esp32-s3-eth`. The build completes and produces `.pio/build/esp32-s3-eth/firmware.elf` and image artifacts.
+
+Secrets & environment
+
+- `.env.example` contains placeholders suitable for publishing.
+- Repository gitignore ignores local `.env` files and `applicatoin/.env` so local developer secrets are not tracked.
+- `esp32_firmware/scripts/load_env.py` expects repo root `.env` to inject Firebase values into the generated header; ensure local `.env` is kept private.
+
+What was updated in the repository (documentation only)
+
+- Main README and Quick Reference were updated to use CRANTROL branding and to reflect the 10-relay architecture, exact pin mappings, env-loading behavior, captive-portal defaults, and build commands taken from the code.
+
+Notes & recommendations
+
+- Rotate any real Firebase credentials that exist locally before publishing publicly.
+- Use `.env.example` to document required environment variables; never commit real secrets.
+- For firmware development, ensure PlatformIO has up-to-date packages and remove stale .pio caches if package resolution issues arise.
+
+If you want, proceed to the remaining documentation files for the same refresh (IMPLEMENTATION_GUIDE.md, PROJECT_AUDIT.md, BUILD_REPORT.md, FILE_MANIFEST.md, DEPLOYMENT_CHECKLIST.md, esp32_firmware/README.md, applicatoin/README.md). All edits will be documentation-only and derived from the codebase.
+
 
 ## 🎉 Project Status: COMPLETE & READY FOR DEPLOYMENT
 

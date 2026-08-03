@@ -1,4 +1,81 @@
-# HashPC Production Deployment Checklist
+# CRANTROL — Production Deployment Checklist
+
+This checklist documents steps to prepare and deploy CRANTROL. All values and defaults below are taken from the code in this repository; follow them exactly unless you intentionally customize hardware or pins.
+
+Security & environment
+
+- [ ] Create a Firebase project and enable Email/Password authentication.
+- [ ] Deploy `firebase/rtdb_rules.json` from this repo to the project's Realtime Database rules.
+- [ ] Keep production Firebase credentials private — do not commit `.env` with real secrets.
+- [ ] Use `.env.example` as a template; create a local `.env` on build agents (CI) or development machines.
+- [ ] If packaging the Flutter app in CI, inject `assets/.env` at build time via secure CI secrets instead of committing production secrets.
+
+Firmware preparation
+
+- [ ] Review `esp32_firmware/include/config.h` for the exact pin mapping and captive-portal defaults.
+- [ ] If you must change pins or defaults, prefer doing so via the captive portal at runtime or by compiling a custom firmware image with edited `getDefaultConfig()`.
+- [ ] To include Firebase values in the firmware build, create a repo-root `.env` with FIREBASE_* keys; `esp32_firmware/scripts/load_env.py` will generate `.pio/generated_env.h` during build.
+- [ ] Build firmware:
+  - `cd esp32_firmware`
+  - `platformio run -e esp32-s3-eth`
+  - To upload: `platformio run -e esp32-s3-eth --target upload`
+
+App preparation
+
+- [ ] Ensure `applicatoin/assets/.env` or CI-injected env contains the correct Firebase values for the app.
+- [ ] Run `flutter pub get` and `flutter pub run build_runner build` to generate required code (Hive adapters).
+- [ ] Run tests and static analysis: `flutter test`, `flutter analyze`.
+- [ ] Build release artifacts once validated: `flutter build apk --release` (or follow platform-specific packaging).
+
+Device & hardware
+
+- Verify the board and pin mapping match your hardware. Default pin mappings (from `config.h` / `pc_types.h`):
+
+  - RELAY_1_PIN = 21
+  - RELAY_2_PIN = 17
+  - RELAY_3_PIN = 16
+  - RELAY_4_PIN = 18
+  - RELAY_5_PIN = 15
+  - RELAY_6_PIN = 3
+  - RELAY_7_PIN = 2
+  - RELAY_8_PIN = 1
+  - RELAY_9_PIN = 0
+  - RELAY_10_PIN = 44
+  - BUZZER_PIN = 43
+  - STATUS_LED_PIN = 47
+  - NETWORK_LED_PIN = 48
+  - RGB_LED_PIN = 46
+
+- [ ] Connect Ethernet (W5500 SPI pins: MISO=12, MOSI=11, SCLK=13, CS=14, IRQ=10, RST=9).
+- [ ] Power supply: ensure adequate voltage/current for relay modules.
+
+Captive portal & initial config
+
+- [ ] By default the captive portal AP is:
+  - SSID: `PC-Control-Setup`
+  - Password: `12345678`
+- [ ] Connect to the AP and open `http://192.168.4.1` to perform initial device configuration (deviceName, Firebase credentials, relay mapping). Stored to NVS.
+
+Verification & testing
+
+- [ ] After firmware upload and configuration, verify device boots and logs to serial at 115200 baud.
+- [ ] Confirm the device authenticates with Firebase and writes `devices/{deviceId}/status`.
+- [ ] Use the Flutter app to login, select device, and toggle relays. Confirm status updates at `devices/{deviceId}/status/relays`.
+- [ ] Verify LED status indicators correspond to code-defined states.
+- [ ] Test pulse relays (relays 9 and 10 by default) and ensure pulse durations match expectations.
+
+Post-deploy
+
+- [ ] Rotate any credentials used during testing.
+- [ ] Monitor device logs in Firebase and set up alerting for authentication anomalies.
+- [ ] Backup device configurations and document factory reset procedures.
+
+Notes
+
+- The firmware supports exactly 10 relay slots by default (MAX_RELAYS = 10). The captive portal and app present and normalize relay configurations into those 10 slots.
+- The firmware and app will tolerate different JSON shapes for relay lists and will normalize them at runtime; `pc_types.h` is the canonical source for default names and pins.
+- Keep `.env` and any local build secrets out of version control.
+
 
 ## 🔐 Security Pre-Deployment
 

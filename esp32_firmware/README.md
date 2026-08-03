@@ -1,4 +1,87 @@
-# HashPC ESP32-S3-ETH Firmware
+# CRANTROL — ESP32-S3-ETH Firmware
+
+This document describes the firmware that runs on the ESP32-S3-ETH board in this repository. All defaults and behaviors described below are taken directly from the firmware source files (esp32_firmware/include/*.h and esp32_firmware/src/*).
+
+Core features (code-implemented)
+
+- Ethernet connectivity (W5500 SPI)
+- Firebase Realtime Database integration for commands and status
+- Captive portal for initial configuration (AP + web UI)
+- 10 relay slot support (MAX_RELAYS = 10)
+- Latched and pulse relays (pulse behaviour implemented for specific slots)
+- RGB status LED plus dedicated status/network LEDs and buzzer
+- NVS-based persistent configuration
+- PlatformIO-friendly structure and pre-build env injection
+
+Pin mappings (exact values from esp32_firmware/include/config.h)
+
+| Purpose | Macro | GPIO |
+|---------|-------:|-----:|
+| Relay 1 | RELAY_1_PIN  | 21 |
+| Relay 2 | RELAY_2_PIN  | 17 |
+| Relay 3 | RELAY_3_PIN  | 16 |
+| Relay 4 | RELAY_4_PIN  | 18 |
+| Relay 5 | RELAY_5_PIN  | 15 |
+| Relay 6 | RELAY_6_PIN  | 3  |
+| Relay 7 | RELAY_7_PIN  | 2  |
+| Relay 8 | RELAY_8_PIN  | 1  |
+| Relay 9 | RELAY_9_PIN  | 0  |
+| Relay 10| RELAY_10_PIN | 44 |
+| Buzzer  | BUZZER_PIN   | 43 |
+| Status LED | STATUS_LED_PIN | 47 |
+| Network LED | NETWORK_LED_PIN | 48 |
+| RGB LED | RGB_LED_PIN | 46 |
+
+Ethernet (W5500 SPI) pins
+
+- ETH_MISO_PIN = 12
+- ETH_MOSI_PIN = 11
+- ETH_SCLK_PIN = 13
+- ETH_CS_PIN   = 14
+- ETH_IRQ_PIN  = 10
+- ETH_RST_PIN  = 9
+
+Captive portal defaults (config.h)
+
+- Default AP SSID: `PC-Control-Setup`
+- Default AP password: `12345678`
+- Portal IP: `http://192.168.4.1`
+
+Environment injection at build time
+
+- `esp32_firmware/scripts/load_env.py` reads repo-root `.env` and writes `.pio/generated_env.h` containing `#define` statements for FB_API_KEY, FB_AUTH_DOMAIN, etc. This file is added to the include path during PlatformIO builds to inject Firebase credentials into the firmware.
+
+Relay behaviour (precise)
+
+- Firmware supports commands: `ON`, `OFF`, and `PULSE`.
+- `executeCommand` in `relay_manager.cpp` handles de-duplication by `revision`, sets pins according to `activeLow`, and manages pulse timers using `pulseOffTimeMs`.
+- Default pulse relays: relay 9 and relay 10 are marked as pulse relays in code; specific pulse durations are defined in `pc_types.h`.
+
+Build instructions (PlatformIO)
+
+```bash
+cd esp32_firmware
+platformio run -e esp32-s3-eth      # build
+platformio run -e esp32-s3-eth --target upload  # upload to device
+platformio device monitor -p <port> -b 115200   # serial monitor
+```
+
+Troubleshooting (code-aligned)
+
+- If generated_env.h is missing or empty: ensure the repository root `.env` contains FIREBASE_* entries and re-run PlatformIO build; load_env.py will create `.pio/generated_env.h`.
+- If linker errors referencing library archives occur: a `pio run -e esp32-s3-eth -v` log and a clean of `.pio` typically help (`pio run -e esp32-s3-eth --target clean; pio run -e esp32-s3-eth`).
+- If a relay does not switch: verify the `pin` value in device `config` (stored under RTDB `devices/{deviceId}/config/relays`) or remap the slot via the captive portal.
+
+Serial output
+
+- Use 115200 baud to view standard firmware logs. Look for tags such as `[ETH]`, `[FB]`, `[RELAY]`, and `[PORTAL]`.
+
+Security notes
+
+- The firmware uses whatever FB_* values are injected at build time; never commit real credentials into the repository. Use `.env.example` for placeholders and keep local `.env` out of version control.
+
+For deeper implementation details, review `esp32_firmware/include/pc_types.h` (relay defaults) and `esp32_firmware/include/config.h` (pin constants and defaults).
+
 
 Complete firmware for Waveshare ESP32-S3-ETH board with multi-relay control, Firebase integration, and local captive portal configuration.
 

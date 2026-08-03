@@ -1,467 +1,156 @@
-# HashPC - Complete IoT PC Control System
+# CRANTROL - Industrial Control Panel for ESP32-S3 Ethernet Systems
 
-A production-ready IoT system for remote PC control combining an ESP32-S3-ETH firmware, Flutter mobile app, and Firebase cloud backend.
+CRANTROL is an industrial-focused IoT control panel combining an ESP32-S3-ETH firmware, a Flutter mobile app, and a Firebase Realtime Database backend. This repository contains the firmware, mobile app, and Firebase rules needed to run and extend the system.
 
-## 📋 Project Overview
+## Project overview
 
-HashPC allows you to:
-- Control PC power, monitors, and other devices via relays
-- Manage devices remotely through Firebase Realtime Database
-- Configure devices via a captive Wi-Fi portal
-- Monitor device status in real-time through a beautiful Flutter app
-- Expand from 4 relays to 8 relays without redesign
+- Firmware: ESP32-S3 (PlatformIO / Arduino) controlling up to 10 relay channels, LED indicators, buzzer, and an optional W5500 Ethernet module.
+- Mobile app: Flutter application (applicatoin/) for authentication, device control, relay sequencing, and configuration.
+- Cloud: Firebase Realtime Database for device state, desired commands, and simple authentication (email/password).
 
-## 🏗️ System Architecture
+Everything in these docs is derived from the current codebase. Do not rely on external or historical documentation for runtime behavior.
 
-```
-┌─────────────────────┐
-│   Flutter Mobile App │ ◄──► Firebase Authentication
-└─────────────────────┘      Firebase Realtime Database
-          △
-          │ HTTPS REST/gRPC
-          │
-┌─────────────────────────┐
-│  Google Firebase Cloud  │
-├─────────────────────────┤
-│ • Authentication        │
-│ • Realtime Database     │
-│ • Rules & Security      │
-└─────────────────────────┘
-          △
-          │ HTTPS REST
-          │
-┌─────────────────────────────────────────┐
-│  ESP32-S3-ETH Firmware                  │
-├─────────────────────────────────────────┤
-│ • Ethernet (W5500)                      │
-│ • Relay Control (GPIO)                  │
-│ • Captive Portal (WiFi AP)              │
-│ • RGB LED Status Indication             │
-│ • NVS Configuration Storage             │
-└─────────────────────────────────────────┘
-          │
-          └──► 4-8 Relays (Power Control)
-```
-
-## 📦 Project Structure
+## High-level architecture
 
 ```
-hashpc/
-├── esp32_firmware/                  # ESP32 firmware (Arduino)
-│   ├── esp32_firmware.ino          # Main sketch
-│   ├── include/
-│   │   ├── pc_types.h              # Type definitions
-│   │   ├── config.h                # Configuration
-│   │   ├── relay_manager.h         # Relay control
-│   │   ├── led_status_manager.h    # LED status
-│   │   ├── ethernet_manager.h      # Network
-│   │   ├── firebase_client.h       # Firebase
-│   │   └── captive_portal.h        # Web UI
-│   ├── src/                         # Implementation files
-│   ├── platformio.ini              # Build config
-│   └── README.md                   # Firmware guide
-│
-├── applicatoin/                     # Flutter mobile app
-│   ├── lib/
-│   │   ├── main.dart               # App entry
-│   │   ├── models/                 # Data models
-│   │   ├── services/               # Firebase service
-│   │   ├── providers/              # State management
-│   │   ├── screens/                # UI screens
-│   │   ├── widgets/                # Reusable widgets
-│   │   └── utils/                  # Themes & helpers
-│   ├── pubspec.yaml                # Dependencies
-│   └── README.md                   # App guide
-│
-├── firebase/                        # Cloud rules
-│   ├── rtdb_rules.json             # RTDB security rules
-│   └── firestore_rules.txt         # Firestore rules
-│
-└── README.md                        # This file
+Flutter mobile app  ⇄  Firebase Realtime Database  ⇄  ESP32-S3-ETH Firmware
 ```
 
-## 🚀 Quick Start
+- Mobile App: authenticates users, shows device dashboard, controls relays, and saves configuration.
+- Firebase RTDB: stores device configuration (devices/{deviceId}/config), current status (devices/{deviceId}/status), desired commands (devices/{deviceId}/desired) and logs.
+- ESP32 Firmware: reads configuration, exposes captive portal for initial setup, connects via Ethernet (preferred) or Wi‑Fi for setup, and executes relay commands.
 
-### 1. ESP32 Firmware Setup
+## Repository layout
 
-```bash
-cd esp32_firmware
-
-# Option A: Arduino IDE
-# 1. Open esp32_firmware.ino in Arduino IDE
-# 2. Install dependencies (ArduinoJson, Adafruit NeoPixel)
-# 3. Select board: ESP32S3 Dev Module
-# 4. Upload
-
-# Option B: PlatformIO
-platformio run -e esp32-s3-eth --target upload
+```
+<repo root>/
+├── esp32_firmware/        # PlatformIO / Arduino firmware (C++ source)
+│   ├── include/           # headers (pc_types.h, config.h, ...)
+│   ├── src/               # implementation
+│   ├── scripts/           # pre-build helpers (load_env.py)
+│   └── platformio.ini     # build configuration
+├── applicatoin/           # Flutter mobile application
+│   ├── lib/               # Dart source
+│   ├── assets/            # packaged assets (assets/.env)
+│   └── pubspec.yaml
+├── firebase/              # Realtime Database rules and related files
+├── .env                   # repo-level placeholders used by firmware build script (ignored by git)
+├── .env.example           # example env for contributors
+└── README.md              # this file
 ```
 
-### 2. Flutter App Setup
+Notes:
+- The repository-level `.env` is used by the firmware build pre-script (esp32_firmware/scripts/load_env.py) to populate generated_env.h.
+- The Flutter app reads environment values from `assets/.env` (see applicatoin/lib/services/app_environment.dart). `assets/.env` is included in `pubspec.yaml`.
 
-```bash
-cd applicatoin
+## Relay architecture and defaults (source of truth)
 
-# Install dependencies
-flutter pub get
+The firmware supports exactly 10 relay slots (MAX_RELAYS = 10). Default relay IDs, names, pins and pulse settings are defined in `esp32_firmware/include/pc_types.h` and wired into `getDefaultConfig()` in `esp32_firmware/include/config.h`.
 
-# Generate model adapters (Hive)
-flutter pub run build_runner build
+Default relay slots (ID → name / pin / notes):
 
-# Run app
-flutter run
-```
+- Relay 1 — "PC Power"        — GPIO 21 (default pulseMs: 350ms)
+- Relay 2 — "Monitor 1"       — GPIO 17
+- Relay 3 — "Monitor 2"       — GPIO 16
+- Relay 4 — "Motherboard Power Button" — GPIO 18 (pulseMs: 250ms)
+- Relay 5 — "Relay 5"         — GPIO 15
+- Relay 6 — "Relay 6"         — GPIO 3
+- Relay 7 — "Relay 7"         — GPIO 2
+- Relay 8 — "Relay 8"         — GPIO 1
+- Relay 9 — "Power"           — GPIO 0 (pulse relay, pulseMs: 4000ms)
+- Relay 10 — "Reset"          — GPIO 44 (pulse relay, pulseMs: 1000ms)
 
-### 3. Firebase Configuration
+- Default relayCount is 10 and the firmware normalizes any provided configuration into these 10 slots.
+- `isPulse` is true by default for relays 9 and 10 (momentary/pulse behavior).
+- `activeLow` default is true in code; relay-level `activeLow` can be overridden per-slot in device configuration.
 
-1. Go to [Firebase Console](https://console.firebase.google.com)
-2. Create new project "CRANTROL"
-3. Enable Authentication (Email/Password)
-4. Create Realtime Database
-5. Copy rules from `firebase/rtdb_rules.json` to Database Rules
-6. Add default credentials:
-   - Email: `PUT_YOUR_FIREBASE_EMAIL_HERE`
-   - Password: `PUT_YOUR_FIREBASE_PASSWORD_HERE`
+Hardware pin constants are defined in `esp32_firmware/include/config.h`:
 
-## 🔐 Security & Credentials
+- RELAY_1_PIN .. RELAY_10_PIN (21,17,16,18,15,3,2,1,0,44)
+- BUZZER_PIN = 43
+- STATUS_LED_PIN = 47
+- NETWORK_LED_PIN = 48
+- RGB_LED_PIN = 46
 
-### Firebase Credentials
-```
-API Key: PUT_YOUR_FIREBASE_API_KEY_HERE
-Auth Domain: PUT_YOUR_FIREBASE_AUTH_DOMAIN_HERE
-Database URL: PUT_YOUR_FIREBASE_DATABASE_URL_HERE
-Project ID: PUT_YOUR_FIREBASE_PROJECT_ID_HERE
-Storage Bucket: PUT_YOUR_FIREBASE_STORAGE_BUCKET_HERE
-Messaging Sender ID: PUT_YOUR_FIREBASE_MESSAGING_SENDER_ID_HERE
-App ID: PUT_YOUR_FIREBASE_APP_ID_HERE
+Ethernet (W5500 SPI) pins in config.h:
+- MISO = 12, MOSI = 11, SCLK = 13, CS = 14, IRQ = 10, RST = 9
 
-Default Admin Account:
-Email: PUT_YOUR_FIREBASE_EMAIL_HERE
-Password: PUT_YOUR_FIREBASE_PASSWORD_HERE
-```
+Default captive-portal AP settings (from config.h):
+- SSID: "PC-Control-Setup"
+- Password: "12345678"
 
-**⚠️ IMPORTANT**: In production:
-- Change default password immediately
-- Enable Multi-Factor Authentication
-- Use environment variables for credentials
-- Implement role-based access control
-- Enable Firebase Security Rules (included)
+## Environment files & secrets (public-repo safety)
 
-## 💾 Hardware Configuration
+- `.env.example` (root): provided with placeholder values and safe to publish.
+- `.env` (root): used by `esp32_firmware/scripts/load_env.py` at build time. It should contain Firebase keys in local developer environments but must be kept out of source control.
+- `applicatoin/assets/.env`: packaged into the Flutter app (listed in `pubspec.yaml`). Use this to bundle non-sensitive defaults or CI-injected values; do not store production secrets in the repository.
 
-### GPIO Pin Mapping
+Git hygiene in this repo already ignores `.env` and development-only environment files. Before publishing or sharing, rotate any real credentials and ensure nothing sensitive is tracked.
 
-| Device | Pin | Purpose |
-|--------|-----|---------|
-| Relay 1 | GPIO33 | PC Power ON/OFF |
-| Relay 2 | GPIO34 | Monitor 1 Power |
-| Relay 3 | GPIO35 | Monitor 2 Power |
-| Relay 4 | GPIO36 | PC Power Button (Pulse) |
-| Status LED | GPIO47 | Status Indicator |
-| Network LED | GPIO48 | Network Status |
-| RGB LED | GPIO21 | Multicolor Status (onboard) |
-| Buzzer | GPIO46 | Audio Feedback |
+## Firebase structure (high level)
 
-### Ethernet W5500 SPI
-
-| Signal | Pin |
-|--------|-----|
-| MISO | GPIO12 |
-| MOSI | GPIO11 |
-| SCLK | GPIO13 |
-| CS | GPIO14 |
-| IRQ | GPIO10 |
-| RST | GPIO9 |
-
-## 🌐 Network & Firebase
-
-### RGB LED Status Codes
-
-| Color | Status |
-|-------|--------|
-| 🔵 Blue | Ethernet not connected |
-| 🟠 Orange | Ethernet connected, no internet |
-| 🟢 Green (blinking) | Internet ready & Firebase connected |
-| 🔴 Red (blinking) | Internet down |
-
-### Firebase Database Structure
+The firmware and app use the following Realtime Database layout (keys derived from code behaviour):
 
 ```
 devices/
   {deviceId}/
-    config/
-      deviceName: "HashPC-Device-001"
-      deviceId: "device_001"
-      roomId: "room_001"
-      relays: [...]
-      allowedUsers: {uid: true, ...}
-    
-    status/
-      timestamp: 1234567890
-      ethernetPlugged: true
-      internetAvailable: true
-      firebaseReady: true
-      relays:
-        1: {id: 1, isOn: false, lastCommand: "OFF"}
-        2: {id: 2, isOn: true, lastCommand: "ON"}
-      
-    desired/
-      1: {command: "ON", timestamp: ..., revision: "..."}
-      
-    logs/
-      log1: {timestamp: ..., message: "...", level: "INFO"}
+    config/    ← persisted device configuration (relay mapping, names, network)
+    status/    ← real-time device status (ethernet, firebaseReady, relay states)
+    desired/   ← transient desired relay commands written by clients
+    logs/      ← optional event logs
 ```
 
-## 📱 Flutter App Features
+- Clients write commands to `devices/{deviceId}/desired/{relayId}` (with `command`, `timestamp`, `revision`).
+- The device processes `desired` entries, executes relays, and writes back into `status`.
 
-### Screens
+## Verified build steps (from this workspace)
 
-1. **Login Screen**
-   - Email/Password authentication
-   - Error handling
-   - Persistent login session
+Flutter (applicatoin/):
 
-2. **Dashboard**
-   - Device status display
-   - Network connectivity indicators
-   - Real-time relay state
-   - Toggle/Pulse controls
-
-3. **Settings**
-   - Device configuration
-   - Relay mapping
-   - Relay naming
-   - Save to Firebase
-
-4. **Logs** (Future)
-   - Device event history
-   - Error tracking
-
-### Navigation
-
-```
-Login → Dashboard ─┬─→ Settings
-                   └─→ Relay Control
+```bash
+cd applicatoin
+flutter pub get
+flutter pub run build_runner build   # generates Hive adapters
+flutter analyze                      # static analysis (warnings/info)
+flutter test                         # unit/widget tests
+flutter build apk --debug            # produces debug APK
 ```
 
-## ⚙️ Relay Configuration
+ESP32 Firmware (esp32_firmware/):
 
-### Relay Types
-
-**Latched Relay** (Default for 1-3)
-- ON/OFF states are maintained
-- Power must be cut to change state
-- Used for power control
-
-**Pulse Relay** (Default for 4)
-- Momentary pulse activation
-- Automatically returns to OFF
-- Used for button simulation
-
-### Example Configuration
-
-```json
-{
-  "id": 4,
-  "name": "PC Power Button",
-  "pin": 36,
-  "activeLow": false,
-  "isPulse": true,
-  "pulseDurationMs": 500,
-  "enabled": true
-}
+```bash
+cd esp32_firmware
+# PlatformIO builds using the esp32-s3-eth environment
+platformio run -e esp32-s3-eth
+# To upload (device attached):
+platformio run -e esp32-s3-eth --target upload
 ```
 
-## 🔧 Configuration & Persistence
+Notes:
+- `esp32_firmware/scripts/load_env.py` reads the repo root `.env` and generates `.pio/generated_env.h` at build time to inject Firebase values into firmware builds.
+- The `platformio.ini` in this repo is configured to use the `esp32-s3-eth` environment.
 
-### Captive Portal Setup
+## Troubleshooting (accurate to current implementation)
 
-1. Device starts with default config
-2. Broadcasts Wi-Fi AP: "HashPC-Setup"
-3. Connect and open http://192.168.4.1
-4. Login with Firebase credentials
-5. Configure all settings
-6. Save (stored in NVS)
+- Firmware link/build problems: clean `esp32_firmware/.pio` and rebuild. If PlatformIO packages are corrupted, re-install PlatformIO packages or remove problematic cached packages.
+- Missing Firebase values in firmware runtime: ensure `.env` (repo root) contains FIREBASE_* keys before platformio builds, or the firmware defaults to placeholder values defined in `config.h`.
+- Flutter: if `assets/.env` is missing, the app falls back to placeholder values. Ensure `assets/.env` is present when building a packaged app.
+- Relay not responding: check wiring and the per-relay `pin` mapping in device `config` stored under `devices/{deviceId}/config/relays` in RTDB.
 
-### NVS Storage
+## Where to look in the code (quick links)
 
-- Device name
-- Firebase credentials
-- Relay GPIO mapping
-- LED pin assignments
-- AP name/password
-- Room configuration
+- esp32_firmware/include/pc_types.h — relay slots and defaults (source of relay names/pins)
+- esp32_firmware/include/config.h — pin constants, AP defaults, and getDefaultConfig()
+- esp32_firmware/scripts/load_env.py — firmware env → generated header
+- applicatoin/lib/services/app_environment.dart — Flutter env loader (reads assets/.env then .env)
+- applicatoin/lib/services/firebase_options.dart — Firebase options built from AppEnvironment
 
-Persists across reboots.
+## Contributing & publishing
 
-## 📊 Data Flow
+- Keep `.env` out of version control. Use `.env.example` for contributors.
+- Rotate Firebase credentials if they were ever leaked.
+- Update `firebase/rtdb_rules.json` in the repo and deploy rules from the Firebase Console.
 
-### Relay Command Execution
+---
 
-```
-1. User taps "ON" in Flutter app
-   ↓
-2. App writes to Firebase: devices/{deviceId}/desired/1 = {command: "ON", ...}
-   ↓
-3. ESP32 polls Firebase every 5 seconds
-   ↓
-4. ESP32 detects new command
-   ↓
-5. ESP32 executes relay: GPIO33 → HIGH
-   ↓
-6. ESP32 writes status: devices/{deviceId}/status/relays/1 = {isOn: true, ...}
-   ↓
-7. Flutter app receives update via listener
-   ↓
-8. UI updates automatically
-```
-
-## 🛡️ Security Rules
-
-### Firebase Realtime Database
-
-- Default deny-all policy
-- Only authenticated users can access
-- Users can only access their own devices
-- Device status is read-only for other users
-- Commands are write-restricted
-- All data validates against schema
-
-See `firebase/rtdb_rules.json` for complete rules.
-
-## 📡 Expansion to 8 Relays
-
-### Current: 4 Relays
-
-```
-Relay 1 (GPIO33) ─ PC Power
-Relay 2 (GPIO34) ─ Monitor 1
-Relay 3 (GPIO35) ─ Monitor 2
-Relay 4 (GPIO36) ─ PC Button
-```
-
-### Future: 8 Relays
-
-```
-Relay 1 (GPIO33) ─ PC Power
-Relay 2 (GPIO34) ─ Monitor 1
-Relay 3 (GPIO35) ─ Monitor 2
-Relay 4 (GPIO36) ─ PC Button
-Relay 5 (GPIO37) ─ Desk Lamp
-Relay 6 (GPIO38) ─ Fan
-Relay 7 (GPIO39) ─ Speaker
-Relay 8 (GPIO40) ─ Humidifier
-```
-
-To expand:
-1. Update `config.h` with new GPIO pins
-2. Modify `getDefaultConfig()` in config.h
-3. Access captive portal and reconfigure
-4. Firmware auto-detects relay count
-
-## 🐛 Troubleshooting
-
-### ESP32 Issues
-
-**Ethernet not detected**
-- Check cable connection
-- Verify GPIO pins match hardware
-- Check serial output for "[ETH]" messages
-
-**Firebase auth fails**
-- Verify credentials in captive portal
-- Check internet connectivity
-- Look for "[FB]" error messages
-
-**Relays not responding**
-- Verify GPIO mapping
-- Check relay module wiring
-- Test "activeLow" setting
-- Monitor serial for relay commands
-
-### Flutter Issues
-
-**Login fails**
-- Check Firebase credentials
-- Verify Firebase Authentication is enabled
-- Check internet connectivity
-- Review Firebase rules
-
-**Device shows offline**
-- Ensure ESP32 has internet (via Ethernet)
-- Verify Firebase connection
-- Check Firebase Realtime Database access
-- Review RTDB rules
-
-**No relay updates**
-- Check real-time listener setup
-- Verify Firebase database permissions
-- Check command format
-- Review device logs
-
-## 📚 Documentation Files
-
-- `esp32_firmware/README.md` - Detailed firmware guide
-- `applicatoin/README.md` - Flutter app development guide
-- `firebase/SECURITY.md` - Security best practices
-
-## 🔄 Workflow Examples
-
-### Turning on PC Power
-
-```
-App (User) ──→ Flutter App ──→ Firebase RTDB ──→ ESP32
-                                      ↓
-                                 desired/{1}
-                                      ↑
-                           ← status/{relays/1}
-                           ← LED: Green (connected)
-           ← Real-time update
-```
-
-### Emergency Power Button
-
-```
-Captive Portal ──→ GPIO36 ──→ 500ms pulse ──→ PC Front Panel
-```
-
-## 🚀 Deployment Checklist
-
-- [ ] Update Firebase credentials in config.h
-- [ ] Change default admin password
-- [ ] Enable Firebase Security Rules
-- [ ] Test all 4 relays
-- [ ] Test Ethernet failover
-- [ ] Configure captive portal SSID
-- [ ] Test Flutter app login
-- [ ] Verify real-time updates work
-- [ ] Test relay commands from app
-- [ ] Verify LED status indicators
-- [ ] Test device restart
-- [ ] Document relay GPIO mapping
-- [ ] Create backup of configuration
-
-## 📝 License
-
-This project is provided as-is for the HashPC initiative.
-
-## 🤝 Support & Contact
-
-For issues or questions:
-1. Check device serial output (115200 baud)
-2. Review Firebase console for errors
-3. Verify network connectivity
-4. Check RTDB rules are deployed
-
-## 🎯 Future Enhancements
-
-- OTA firmware updates
-- MQTT support
-- Data logging to cloud storage
-- Advanced scheduling
-- Energy monitoring
-- Web dashboard
-- Mobile notifications
-- Voice control integration
-- Scene/macro support
-- Backup & restore configuration
+For more developer-focused details and step-by-step deployment, see `IMPLEMENTATION_GUIDE.md`, `DEPLOYMENT_CHECKLIST.md`, and `esp32_firmware/README.md`.

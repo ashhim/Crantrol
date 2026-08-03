@@ -1,5 +1,62 @@
 
-# PC Control Firmware
+# CRANTROL — Firmware Overview
+
+This firmware README summarizes the firmware behavior implemented in `esp32_firmware/`. The text below is based on the current source files in that folder and is accurate to the code in this workspace.
+
+Purpose
+
+The firmware runs on ESP32-S3 hardware with an optional W5500 Ethernet module. It:
+
+- Connects to Firebase Realtime Database to receive relay commands and report status.
+- Exposes a captive portal for initial setup and configuration (AP + web UI).
+- Controls a fixed set of relay slots (default: 10) with support for latched and pulse relays.
+- Drives LED indicators and a buzzer for status feedback.
+- Persists configuration in NVS.
+
+Primary data model and DB layout
+
+- `devices/{deviceId}/config` — device configuration, relay mapping
+- `devices/{deviceId}/status` — current status (ethernet, firebase, relays)
+- `devices/{deviceId}/desired` — commands written by clients
+- `devices/{deviceId}/logs` — optional runtime logs
+
+Relay defaults and configuration
+
+- Default relay slots are defined in `esp32_firmware/include/pc_types.h` and normalized into a 10-slot layout.
+- Each slot contains: id, name, pin, activeLow, pulseMs/pulseDurationMs, enabled, isPulse.
+- The firmware's `normalizeRelaySlots()` and `getDefaultConfig()` implement how runtime config maps into slots.
+
+Captive portal & configuration
+
+- The captive portal is provided for initial configuration and reconfiguration of device settings. Defaults (from `config.h`):
+  - AP SSID: `PC-Control-Setup`
+  - AP password: `12345678`
+  - Portal IP: `http://192.168.4.1`
+- Portal actions are persisted into NVS so devices will boot configured after setup.
+
+Build-time environment injection
+
+- `esp32_firmware/scripts/load_env.py` reads repo-root `.env` and writes `.pio/generated_env.h` with FB_* `#define`s consumed at compile time.
+- If no `.env` is present, firmware will compile with default placeholder values defined in `config.h`.
+
+Where to find defaults in code
+
+- Relay defaults: `esp32_firmware/include/pc_types.h`
+- Pin constants & AP defaults: `esp32_firmware/include/config.h`
+- Generated env script: `esp32_firmware/scripts/load_env.py`
+
+Operation & diagnostics
+
+- Serial output at 115200 includes tags such as `[ETH]`, `[FB]`, and `[RELAY]` for diagnosing behavior.
+- LED status semantics are implemented in `led_status_manager.cpp` and wired to pins in `config.h`.
+
+Security considerations
+
+- Do not commit real Firebase credentials into the repository. Use `.env.example` for placeholders.
+- Deploy `firebase/rtdb_rules.json` to the production Firebase project prior to allowing device connections.
+
+This file intentionally documents only behaviors implemented in the code. For implementation details, review the source headers and implementation files referenced above.
+
 
 Waveshare ESP32-S3-ETH firmware for:
 - Ethernet (W5500)

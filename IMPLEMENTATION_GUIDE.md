@@ -1,4 +1,95 @@
-# HashPC Complete Implementation Guide
+# CRANTROL — Implementation Guide
+
+This guide explains how the current CRANTROL repository is organized and how to build, configure, and deploy the firmware and mobile application using the exact behaviours implemented in this workspace.
+
+Source-of-truth notes
+
+- All details in this guide are taken directly from the code in this repository (esp32_firmware/include/*.h, esp32_firmware/src/*, applicatoin/lib/*, and tooling scripts). Do not rely on previously published or external documentation for runtime defaults.
+
+Repository layout
+
+```
+<repo root>/
+├── esp32_firmware/    # Firmware (PlatformIO / Arduino sources)
+│   ├── include/       # Headers (pc_types.h, config.h, ...)
+│   ├── src/           # Implementation files
+│   ├── scripts/       # Pre-build helper (load_env.py)
+│   └── platformio.ini
+├── applicatoin/       # Flutter app
+│   ├── lib/           # Dart source
+│   └── assets/        # Packaged assets (assets/.env)
+├── firebase/          # Realtime DB rules
+├── .env.example       # Public env placeholders
+└── README.md
+```
+
+Environment & secrets (how the code uses them)
+
+- Firmware: `esp32_firmware/scripts/load_env.py` reads the repo-root `.env` and writes `.pio/generated_env.h` with `#define FB_*` values. Keep your local `.env` private. If generated_env.h is not present, firmware defaults from `config.h` are used.
+
+- Flutter: `applicatoin/lib/services/app_environment.dart` attempts to load `assets/.env` (bundled asset) first; if that fails it tries `.env` via the asset bundle. The app then reads values like FIREBASE_API_KEY, FIREBASE_DATABASE_URL, etc., and firebase_options.dart constructs FirebaseOptions from AppEnvironment getters.
+
+Build instructions (verified in this workspace)
+
+Flutter app (applicatoin/):
+
+```bash
+cd applicatoin
+flutter pub get
+flutter pub run build_runner build   # generates Hive adapters used by the app
+flutter analyze                      # static checks
+flutter test                         # unit/widget tests
+flutter build apk --debug            # debug APK (was verified here)
+```
+
+Firmware (esp32_firmware/):
+
+```bash
+cd esp32_firmware
+# Build only
+platformio run -e esp32-s3-eth
+# Build and upload (device attached)
+platformio run -e esp32-s3-eth --target upload
+# Monitor serial output
+platformio device monitor -p <port> -b 115200
+```
+
+Important note: the firmware build step relies on `.env` at the repository root to populate `FB_` defines. If you wish to use CI or automated builds, inject environment variables or create a local `.env` on the build agent (do not commit this file).
+
+Default captive-portal details (from config.h)
+
+- SSID: `PC-Control-Setup`
+- Password: `12345678`
+- Portal IP: `http://192.168.4.1`
+
+Relay behaviour (from pc_types.h & relay_manager.cpp)
+
+- Firmware supports 10 relay slots (MAX_RELAYS = 10). Default `isPulse` is true for relays 9 and 10. Pulse durations are defined as default in `pc_types.h` for specific slots.
+- Commands supported: `ON`, `OFF`, `PULSE`. Pulse behavior sets a timed `pulseOffTimeMs` and the update loop clears the pin when time expires.
+- Relay IDs are 1-based in the DB and converted to 0-based indices in firmware.
+
+Firebase data flow (code-observed)
+
+- Clients write desired commands to `devices/{deviceId}/desired/{relayId}` (with `command`, `timestamp`, `revision`).
+- Firmware reads `desired`, executes commands, and writes state back to `devices/{deviceId}/status/relays`.
+- App listens to `status` and updates UI in real-time.
+
+Troubleshooting (code-aligned)
+
+- If firmware cannot find FB_* defines: check that `esp32_firmware/.pio/generated_env.h` exists and that repo-root `.env` contains FIREBASE_* keys.
+- If PlatformIO fails during linking: `pio run -e esp32-s3-eth -v` and inspect ar/ranlib outputs; try removing `.pio` and re-running to clear caches.
+- If the Flutter app shows placeholder values at runtime: ensure `applicatoin/assets/.env` is present in the built app or provide env injection during CI.
+
+Where to look in code for specifics
+
+- Relay defaults & pins: `esp32_firmware/include/pc_types.h`
+- Pin constants, AP defaults: `esp32_firmware/include/config.h`
+- Firmware env → generated header: `esp32_firmware/scripts/load_env.py`
+- Flutter env loader: `applicatoin/lib/services/app_environment.dart`
+- Firebase options used by app: `applicatoin/lib/services/firebase_options.dart`
+
+This guide is intentionally prescriptive and code-driven. If additional expansion instructions are needed for developer-specific hardware (board variants, alternate SPI layouts), inspect `config.h` and `pc_types.h` and adjust pins via the captive portal or by editing getDefaultConfig() if compiling custom firmware for special hardware.
+
 
 ## 📦 Project Delivery Summary
 

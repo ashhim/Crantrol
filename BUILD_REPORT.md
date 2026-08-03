@@ -1,4 +1,47 @@
-# Build & E2E Verification Report
+# Build & Verification Report (CRANTROL)
+
+This report summarizes the build and end-to-end verification activities performed in this workspace. All results below were produced using the repository files and local toolchain available here.
+
+Firmware build
+
+- Tool: PlatformIO
+- Environment: `esp32-s3-eth` (see `esp32_firmware/platformio.ini`)
+- Artifact: `.pio/build/esp32-s3-eth/firmware.elf` and corresponding image files
+- Result: SUCCESS (the build produced firmware artifacts and an ESP32S3 image in the captured log)
+
+Notes:
+- `esp32_firmware/scripts/load_env.py` is run as a pre-build step to generate `.pio/generated_env.h` from the repo-root `.env` file. If `.env` is missing, firmware defaults defined in `config.h` are used.
+- If link-time archive errors occur during PlatformIO builds, a full `.pio` clean and re-run typically resolves transient archive-corruption or package-cache issues.
+
+Flutter app build
+
+- Tool: Flutter SDK
+- Commands used:
+  - `flutter pub get`
+  - `flutter pub run build_runner build` (generates Hive adapters)
+  - `flutter analyze`
+  - `flutter test`
+  - `flutter build apk --debug`
+- Result: SUCCESS (debug APK produced at `build/app/outputs/flutter-apk/app-debug.apk` in this workspace)
+
+Environment usage
+
+- Firmware: repo-root `.env` → `esp32_firmware/scripts/load_env.py` → `.pio/generated_env.h` (FB_* defines)
+- Flutter: `applicatoin/assets/.env` is included as an asset in `pubspec.yaml`; `applicatoin/lib/services/app_environment.dart` reads `assets/.env` first, then attempts `.env` via rootBundle fallback.
+
+Security & secrets
+
+- `.env.example` contains placeholder values and is safe for publishing.
+- Local `.env` files must be kept secret; `.gitignore` in this repository already ignores common local files and `.env` entries.
+
+End-to-end verification steps executed
+
+1. PlatformIO build for `esp32-s3-eth` completed and final log indicated success and image creation.
+2. Flutter dependency resolution, analysis, tests and debug APK build all completed successfully in this workspace.
+3. Repo scanned for leftover tracked secrets; tracked source files do not contain live Firebase credentials. Local developer files (previously `applicatoin/.env`) were sanitized in this session and a backup was stored in session-state.
+
+If you need upload instructions or CI steps for automated builds, I can add suggested pipelines (GitHub Actions) that inject secrets securely and run the same verified commands.
+
 
 This document details the build results, files modified, root cause analysis, security rules, and end-to-end (E2E) verification for the HashPC IoT PC Control System.
 

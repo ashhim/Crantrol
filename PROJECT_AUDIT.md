@@ -1,4 +1,55 @@
-# Project Audit - IoT PC Control System
+# Project Audit — CRANTROL
+
+This audit documents findings derived from the repository source files. All claims below are taken from the code and build files present in this workspace.
+
+Repository structure (derived from current tree)
+
+```
+<repo root>/
+├── esp32_firmware/     # PlatformIO firmware (C++: include/ and src/)
+├── applicatoin/        # Flutter mobile app
+├── firebase/           # Realtime Database rules and related files
+├── .env                # Local build-time env (ignored by git)
+├── .env.example        # Public placeholders
+└── docs & README files
+```
+
+Completed modules (code-verified)
+
+- Firmware: PlatformIO project builds; default configuration and relay slots are implemented in `esp32_firmware/include/pc_types.h` and `esp32_firmware/include/config.h`.
+- Flutter app: app loads environment via `applicatoin/lib/services/app_environment.dart`, constructs FirebaseOptions from those values, and uses Provider and Hive as shown in `pubspec.yaml` and `lib/`.
+- Firebase rules: `firebase/rtdb_rules.json` is present and intended to validate device-level config/status/desired writes (review the file for your deployment needs).
+
+Key code-derived facts
+
+- MAX_RELAYS = 10 (firmware supports 10 relay slots; see `pc_types.h`).
+- Default relay slot definitions and pin mappings are defined in `pc_types.h` and used by `getDefaultConfig()` in `config.h`.
+- The firmware normalizes any runtime relay configuration into the fixed 10 slots via `normalizeRelaySlots()`.
+- The firmware's pre-build script `esp32_firmware/scripts/load_env.py` reads a repo-root `.env` and generates `.pio/generated_env.h` to inject Firebase defines at compile time.
+- The Flutter app includes `assets/.env` in `pubspec.yaml` and the app loads environment values from `assets/.env` first, then falls back to `.env` via rootBundle if available (see `app_environment.dart`).
+
+Build results (from recent runs in this workspace)
+
+- PlatformIO firmware build: SUCCESS (artifact created: `.pio/build/esp32-s3-eth/firmware.elf` and ESP32S3 image). The build log contains a final "[SUCCESS]" message.
+- Flutter build: `flutter build apk --debug` successfully produced `build\app\outputs\flutter-apk\app-debug.apk` in this workspace.
+
+Schema & parsing notes
+
+- The firmware and app accept and normalize relay configuration; the app and firmware parsing code have been written to accept common JSON shapes and to normalize them into the canonical format implemented by `pc_types.h`.
+- The RTDB rules included in the repo validate types and structure but must be deployed in the Firebase console for enforcement.
+
+Security & secrets
+
+- `.gitignore` excludes `.env` and `applicatoin/.env` — local environment files are not tracked when correctly ignored.
+- `.env.example` contains placeholders only; replace them locally and keep `.env` out of version control.
+
+Outstanding items for operators (NOT code changes)
+
+- Ensure Firebase rules are deployed to your project before connecting devices.
+- Rotate any real credentials found on local disks and ensure the local `.env` is removed before sharing the workspace.
+
+If you want a line-by-line verification of a specific area (rules, relay mapping, generated headers), say which file or component to inspect next.
+
 
 This document outlines the final results of the full Firebase authentication and Realtime Database (RTDB) access audit, schema validation, and E2E verification for the HashPC project.
 

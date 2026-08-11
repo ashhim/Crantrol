@@ -1,5 +1,6 @@
 #include "network_scanner.h"
 #include <ETH.h>
+#include <cstring>
 
 extern "C" {
 #include "lwip/etharp.h"
@@ -27,6 +28,70 @@ struct netif* ethLwipNetif() {
   esp_netif_t* espNetif = ETH.netif();
   if (espNetif == nullptr) return nullptr;
   return static_cast<struct netif*>(esp_netif_get_netif_impl(espNetif));
+}
+
+// etharp_request() ends up inside ethernet_output(), which this framework's
+// ESP-IDF lwIP port hard-asserts on unless the CALLING TASK is specifically
+// marked as the TCPIP core lock holder (LOCK_TCPIP_CORE() here expands to
+// sys_mutex_lock() *plus* sys_thread_tcpip(LWIP_CORE_LOCK_MARK_HOLDER), an
+// ESP-IDF-specific addition on top of stock lwIP — see
+// framework-arduinoespressif32-libs/.../lwip/port/include/lwipopts.h).
+// Taking that lock from the Arduino loop() task still crashed in testing,
+// so instead of depending on that holder-marking behaving as expected from
+// an arbitrary task, this uses lwIP's own officially-documented, always-safe
+// mechanism for invoking raw API functions from another thread:
+// tcpip_callback() queues the call to run for real on the TCPIP thread,
+// where LWIP_ASSERT_CORE_LOCKED() is satisfied unconditionally because the
+// code genuinely *is* running there.
+struct ArpProbeRequest {
+  struct netif* netif;
+  ip4_addr_t target;
+};
+
+void arpProbeCallback(void* ctx) {
+  ArpProbeRequest* req = static_cast<ArpProbeRequest*>(ctx);
+  etharp_request(req->netif, &req->target);
+  delete req;
+}
+
+// etharp_get_entry() is a read of lwIP's live ARP table rather than a
+// transmit call, but nothing in the public headers proves it is exempt from
+// the same TCPIP-thread requirement as etharp_request() above (no source is
+// available in this framework install to confirm either way — see
+// framework-arduinoespressif32-libs/esp32s3/include/lwip/lwip/src/include/
+// lwip/etharp.h, declaration only). Rather than assume it's safe, this reads
+// it via the same tcpip_callback mechanism, using the blocking variant
+// (tcpip_callback_wait) so the harvest stays a simple synchronous call from
+// NetworkScanner's perspective — the wait's semaphore hand-off also gives a
+// proper memory barrier for the snapshot written by the TCPIP thread.
+constexpr int kMaxArpSnapshot = ARP_TABLE_SIZE;
+
+struct ArpSnapshotEntry {
+  bool valid;
+  uint32_t ip;  // ip4_addr_t.addr, native lwIP byte order
+  uint8_t mac[6];
+};
+
+struct ArpHarvestCtx {
+  ArpSnapshotEntry entries[kMaxArpSnapshot];
+};
+
+void arpHarvestCallback(void* ctxPtr) {
+  ArpHarvestCtx* ctx = static_cast<ArpHarvestCtx*>(ctxPtr);
+  for (int i = 0; i < kMaxArpSnapshot; ++i) {
+    ip4_addr_t* ipEntry = nullptr;
+    struct netif* entryNetif = nullptr;
+    struct eth_addr* ethEntry = nullptr;
+
+    int valid = etharp_get_entry(static_cast<size_t>(i), &ipEntry, &entryNetif, &ethEntry);
+    if (!valid || ipEntry == nullptr || ethEntry == nullptr) {
+      ctx->entries[i].valid = false;
+      continue;
+    }
+    ctx->entries[i].valid = true;
+    ctx->entries[i].ip = ipEntry->addr;
+    memcpy(ctx->entries[i].mac, ethEntry->addr, sizeof(ctx->entries[i].mac));
+  }
 }
 
 String macToString(const uint8_t* addr) {
@@ -111,17 +176,17 @@ void NetworkScanner::probeNextHost() {
     return;  // no need to ARP ourselves
   }
 
-  ip4_addr_t target;
-  target.addr = static_cast<uint32_t>(candidate);
+  ArpProbeRequest* req = new ArpProbeRequest();
+  req->netif = netif;
+  req->target.addr = static_cast<uint32_t>(candidate);
 
-  // etharp_request() ultimately calls ethernet_output(), which asserts the
-  // lwIP TCPIP core lock is held. This runs from the Arduino loop() task,
-  // not the lwIP thread, so it must take that lock explicitly — omitting it
-  // crashes the board (LWIP_ASSERT_CORE_LOCKED abort) rather than a graceful
-  // failure.
-  LOCK_TCPIP_CORE();
-  etharp_request(netif, &target);  // fire-and-forget; replies land in lwIP's own ARP table
-  UNLOCK_TCPIP_CORE();
+  // Non-blocking: queues onto the TCPIP thread and returns immediately.
+  // Fire-and-forget — replies land in lwIP's own ARP table on their own. If
+  // the TCPIP mailbox is briefly full, drop this probe rather than block
+  // loop(); the next 750ms tick probes the next host in the sweep.
+  if (tcpip_callback(arpProbeCallback, req) != ERR_OK) {
+    delete req;
+  }
 }
 
 void NetworkScanner::harvestArpTable() {
@@ -130,25 +195,22 @@ void NetworkScanner::harvestArpTable() {
     return;
   }
 
+  ArpHarvestCtx snapshot;
+  memset(&snapshot, 0, sizeof(snapshot));
+  if (tcpip_callback_wait(arpHarvestCallback, &snapshot) != ERR_OK) {
+    return;  // couldn't safely read the ARP table this cycle — retry next harvest tick
+  }
+
   uint32_t now = millis();
   std::vector<bool> seenThisPass(knownDevices.size(), false);
 
-  // etharp_get_entry() reads lwIP's live ARP table, which the lwIP thread
-  // can mutate concurrently — same core-lock requirement as etharp_request()
-  // above, just for reading instead of writing.
-  LOCK_TCPIP_CORE();
-  for (int i = 0; i < ARP_TABLE_SIZE; ++i) {
-    ip4_addr_t* ipEntry = nullptr;
-    struct netif* entryNetif = nullptr;
-    struct eth_addr* ethEntry = nullptr;
-
-    int valid = etharp_get_entry(static_cast<size_t>(i), &ipEntry, &entryNetif, &ethEntry);
-    if (!valid || ipEntry == nullptr || ethEntry == nullptr) {
+  for (int i = 0; i < kMaxArpSnapshot; ++i) {
+    if (!snapshot.entries[i].valid) {
       continue;
     }
 
-    IPAddress ip(ipEntry->addr);
-    String mac = macToString(ethEntry->addr);
+    IPAddress ip(snapshot.entries[i].ip);
+    String mac = macToString(snapshot.entries[i].mac);
 
     DiscoveredDevice* existing = findByIp(ip);
     if (existing != nullptr) {
@@ -171,7 +233,6 @@ void NetworkScanner::harvestArpTable() {
       dirty = true;
     }
   }
-  UNLOCK_TCPIP_CORE();
 
   // Anything not present in this harvest pass ages toward inactive rather
   // than being dropped immediately — a device can miss one ARP cycle

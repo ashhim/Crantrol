@@ -344,7 +344,8 @@ String CaptivePortal::getLoginHtml() {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #0A0E13;
+      color: #E0E0E0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -352,19 +353,30 @@ String CaptivePortal::getLoginHtml() {
       padding: 20px;
     }
     .login-container {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      background: #0C1018;
+      border: 1px solid #1A2332;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.55);
       padding: 40px;
       width: 100%;
       max-width: 400px;
     }
+    .brand {
+      text-align: center;
+      margin-bottom: 8px;
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 4px;
+    }
+    .brand .g { color: #00E676; }
     h1 {
       text-align: center;
-      color: #333;
+      color: #5A6A7A;
       margin-bottom: 25px;
-      font-size: 26px;
+      font-size: 12px;
       font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
     }
     .form-group {
       margin-bottom: 20px;
@@ -372,14 +384,17 @@ String CaptivePortal::getLoginHtml() {
     label {
       display: block;
       margin-bottom: 8px;
-      color: #555;
+      color: #8AA0B1;
       font-weight: 600;
+      font-size: 13px;
     }
     input[type="email"],
     input[type="password"] {
       width: 100%;
       padding: 12px 15px;
-      border: 2px solid #eaeaea;
+      background: #0C121A;
+      color: #E0E0E0;
+      border: 1px solid #1D2732;
       border-radius: 8px;
       font-size: 14px;
       transition: all 0.3s;
@@ -387,36 +402,40 @@ String CaptivePortal::getLoginHtml() {
     input[type="email"]:focus,
     input[type="password"]:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: #00E676;
     }
     button {
       width: 100%;
       padding: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: #00E676;
+      color: #06120B;
       border: none;
       border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
       cursor: pointer;
-      transition: all 0.3s;
-      box-shadow: 0 4px 10px rgba(118, 75, 162, 0.3);
+      transition: all 0.2s;
+      box-shadow: 0 4px 14px rgba(0, 230, 118, 0.25);
     }
     button:hover {
       transform: translateY(-1px);
-      box-shadow: 0 6px 15px rgba(118, 75, 162, 0.4);
+      box-shadow: 0 6px 18px rgba(0, 230, 118, 0.35);
     }
     .info {
       text-align: center;
       margin-top: 20px;
-      color: #777;
-      font-size: 13px;
+      color: #5A6A7A;
+      font-size: 12px;
+      line-height: 1.6;
     }
+    .info strong { color: #8AA0B1; }
   </style>
 </head>
 <body>
   <div class="login-container">
-    <h1>CRANTROL Portal</h1>
+    <div class="brand">CR<span class="g">A</span>NTROL</div>
+    <h1>Control Panel Login</h1>
     <form method="POST" action="/login">
       <div class="form-group">
         <label for="email">Email</label>
@@ -452,31 +471,40 @@ String CaptivePortal::getDashboardHtml() {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f4f6fa;
-      color: #333;
+      background: #0A0E13;
+      color: #E0E0E0;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: #0C1018;
+      border-bottom: 1px solid #1A2332;
+      color: #E0E0E0;
       padding: 15px 30px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
     }
-    .header h1 { font-size: 22px; font-weight: 700; }
+    .header h1 {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 3px;
+    }
+    .header h1 .g { color: #00E676; }
     .nav-buttons a {
-      color: white;
+      color: #E0E0E0;
       text-decoration: none;
       margin-left: 15px;
       padding: 8px 16px;
-      background: rgba(255,255,255,0.18);
+      background: #10161F;
+      border: 1px solid #1D2732;
       border-radius: 6px;
       font-weight: 600;
-      transition: all 0.3s;
+      font-size: 13px;
+      transition: all 0.2s;
     }
     .nav-buttons a:hover {
-      background: rgba(255,255,255,0.3);
+      background: #1A2332;
+      border-color: #00E676;
     }
     .container {
       max-width: 1200px;
@@ -489,40 +517,44 @@ String CaptivePortal::getDashboardHtml() {
       gap: 25px;
     }
     .card {
-      background: white;
+      background: #0C1018;
+      border: 1px solid #1A2332;
       border-radius: 10px;
       padding: 25px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
     }
     .card h2 {
       margin-bottom: 20px;
-      color: #764ba2;
-      font-size: 18px;
-      font-weight: 700;
-      border-bottom: 2px solid #f0f0f2;
+      color: #5EEAD4;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border-bottom: 1px solid #1A2332;
       padding-bottom: 8px;
     }
     .status-item {
       display: flex;
       justify-content: space-between;
       padding: 12px 0;
-      border-bottom: 1px solid #eaeaea;
+      border-bottom: 1px solid #1A2332;
     }
     .status-item:last-child {
       border-bottom: none;
     }
-    .label { color: #666; font-weight: 500; }
-    .value { font-weight: 600; display: flex; align-items: center; }
+    .label { color: #8AA0B1; font-weight: 500; }
+    .value { color: #E0E0E0; font-weight: 600; display: flex; align-items: center; }
     .indicator {
       display: inline-block;
       width: 10px;
       height: 10px;
       border-radius: 50%;
       margin-left: 10px;
+      box-shadow: 0 0 8px currentColor;
     }
-    .indicator.active { background: #2ecc71; }
-    .indicator.inactive { background: #e74c3c; }
-    
+    .indicator.active { background: #00E676; color: #00E676; }
+    .indicator.inactive { background: #FF1744; color: #FF1744; }
+
     .relay-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -531,24 +563,24 @@ String CaptivePortal::getDashboardHtml() {
     .relay-item-card {
       padding: 15px;
       text-align: center;
-      border: 2px solid #eaeaea;
+      border: 1px solid #1A2332;
       border-radius: 8px;
-      background: white;
-      transition: all 0.3s;
+      background: #111820;
+      transition: all 0.2s;
       min-height: 132px;
     }
     .relay-item-card.on {
-      background: #eefcf4;
-      border-color: #2ecc71;
+      background: #0E1F17;
+      border-color: #00E676;
     }
     .relay-item-card strong {
       display: block;
       font-size: 16px;
-      color: #333;
+      color: #E0E0E0;
     }
     .relay-item-card p {
       font-size: 13px;
-      color: #666;
+      color: #8AA0B1;
       margin: 5px 0;
     }
     .relay-status-pill {
@@ -556,46 +588,47 @@ String CaptivePortal::getDashboardHtml() {
       padding: 3px 8px;
       font-size: 11px;
       font-weight: 700;
-      color: white;
-      background: #95a5a6;
+      color: #E0E0E0;
+      background: #334155;
       border-radius: 4px;
     }
     .relay-item-card.on .relay-status-pill {
-      background: #2ecc71;
+      background: #00E676;
+      color: #06120B;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>CRANTROL Dashboard</h1>
+    <h1>CR<span class="g">A</span>NTROL</h1>
     <div class="nav-buttons">
       <a href="/settings">Settings</a>
       <a href="/logout">Logout</a>
     </div>
   </div>
-  
+
   <div class="container">
     <div class="grid">
       <div class="card">
         <h2>Network Status</h2>
         <div id="network-status"></div>
       </div>
-      
+
       <div class="card">
         <h2>Firebase Connection</h2>
         <div id="firebase-status"></div>
       </div>
-      
+
       <div class="card">
         <h2>Relay Status</h2>
         <div class="relay-grid" id="relay-grid"></div>
       </div>
-      
+
       <div class="card">
         <h2>Auto Power On PC</h2>
         <div style="display:flex; flex-direction:column; gap:10px; align-items:flex-start;">
-          <button id="autoPowerButton" onclick="runAutoSequence()" style="padding:10px 16px; border:none; border-radius:8px; background:#2ecc71; color:white; font-weight:700; cursor:pointer;">Start Sequence</button>
-          <div id="autoPowerStatus" style="font-size:13px; color:#ecf0f1;">Idle</div>
+          <button id="autoPowerButton" onclick="runAutoSequence()" style="padding:10px 16px; border:none; border-radius:8px; background:#00E676; color:#06120B; font-weight:700; cursor:pointer;">Start Sequence</button>
+          <div id="autoPowerStatus" style="font-size:13px; color:#8AA0B1;">Idle</div>
         </div>
       </div>
     </div>
@@ -837,43 +870,50 @@ String CaptivePortal::getSettingsHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HashPC - Configuration</title>
+  <title>CRANTROL - Configuration</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f4f6fa;
+      background: #0A0E13;
+      color: #E0E0E0;
       padding-bottom: 50px;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: #0C1018;
+      border-bottom: 1px solid #1A2332;
+      color: #E0E0E0;
       padding: 15px 30px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
     }
-    .header h1 { font-size: 22px; font-weight: 700; }
-    .header a { color: white; text-decoration: none; margin-left: 15px; font-weight: 600; }
+    .header h1 { font-size: 20px; font-weight: 900; letter-spacing: 3px; }
+    .header h1 .g { color: #00E676; }
+    .header a { color: #E0E0E0; text-decoration: none; margin-left: 15px; font-weight: 600; font-size: 13px; }
+    .header a:hover { color: #00E676; }
     .container {
       max-width: 850px;
       margin: 30px auto;
       padding: 0 20px;
     }
     .card {
-      background: white;
+      background: #0C1018;
+      border: 1px solid #1A2332;
       border-radius: 10px;
       padding: 30px;
       margin-bottom: 25px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
     }
     h2 {
-      color: #764ba2;
+      color: #5EEAD4;
       margin-bottom: 20px;
-      font-size: 19px;
-      font-weight: 700;
-      border-bottom: 2px solid #f0f0f2;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border-bottom: 1px solid #1A2332;
       padding-bottom: 8px;
     }
     .form-group {
@@ -882,7 +922,7 @@ String CaptivePortal::getSettingsHtml() {
     label {
       display: block;
       margin-bottom: 6px;
-      color: #555;
+      color: #8AA0B1;
       font-weight: 600;
       font-size: 14px;
     }
@@ -892,15 +932,17 @@ String CaptivePortal::getSettingsHtml() {
     input[type="number"] {
       width: 100%;
       padding: 10px 12px;
-      border: 1px solid #ddd;
+      background: #0C121A;
+      color: #E0E0E0;
+      border: 1px solid #1D2732;
       border-radius: 6px;
       font-size: 14px;
       transition: all 0.3s;
     }
     input:focus {
       outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+      border-color: #00E676;
+      box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.15);
     }
     .form-row {
       display: grid;
@@ -909,25 +951,26 @@ String CaptivePortal::getSettingsHtml() {
     }
     button {
       padding: 10px 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: #00E676;
+      color: #06120B;
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      font-weight: 600;
-      transition: all 0.3s;
-      box-shadow: 0 4px 10px rgba(118, 75, 162, 0.2);
+      font-weight: 700;
+      transition: all 0.2s;
+      box-shadow: 0 4px 10px rgba(0, 230, 118, 0.2);
     }
     button:hover {
       transform: translateY(-1px);
-      box-shadow: 0 6px 15px rgba(118, 75, 162, 0.3);
+      box-shadow: 0 6px 15px rgba(0, 230, 118, 0.3);
     }
     .relay-item {
-      background: #f8f9fc;
+      background: #111820;
       padding: 20px;
       border-radius: 8px;
       margin-bottom: 15px;
-      border-left: 4px solid #667eea;
+      border: 1px solid #1A2332;
+      border-left: 4px solid #00E676;
     }
     .checkbox-group {
       display: flex;
@@ -942,6 +985,7 @@ String CaptivePortal::getSettingsHtml() {
     }
     .checkbox-group label {
       margin-bottom: 0;
+      color: #8AA0B1;
       user-select: none;
       cursor: pointer;
     }
@@ -949,13 +993,13 @@ String CaptivePortal::getSettingsHtml() {
 </head>
 <body>
   <div class="header">
-    <h1>HashPC Settings</h1>
+    <h1>CR<span class="g">A</span>NTROL <span style="color:#5A6A7A;font-weight:600;letter-spacing:1px;">· SETTINGS</span></h1>
     <div>
       <a href="/dashboard">Dashboard</a>
       <a href="/logout">Logout</a>
     </div>
   </div>
-  
+
   <div class="container">
     <!-- Device config -->
     <div class="card">
@@ -1091,7 +1135,7 @@ String CaptivePortal::getSettingsHtml() {
     </div>
     
     <div class="card" style="text-align: center;">
-      <button onclick="restartDevice()" style="background:linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">Restart Device</button>
+      <button onclick="restartDevice()" style="background:#FF1744; color:#fff; box-shadow:0 4px 10px rgba(255,23,68,0.25);">Restart Device</button>
     </div>
   </div>
   
@@ -1260,7 +1304,7 @@ String CaptivePortal::getSettingsHtml() {
       const isEnabled = relay.enabled !== false;
       
       card.innerHTML = `
-        <h4 style="margin-bottom:12px; color:#667eea;">Relay ${relay.id} Settings</h4>
+        <h4 style="margin-bottom:12px; color:#5EEAD4;">Relay ${relay.id} Settings</h4>
         <input type="hidden" class="relay-id" value="${relay.id}">
         <input type="hidden" class="relay-state" value="${relay.state || relay.isOn ? 1 : 0}">
         <div class="form-row">
@@ -1587,9 +1631,10 @@ void CaptivePortal::saveConfigToNvs() {
   
   prefs.putString(NVS_CONFIG_KEY, jsonStr);
   prefs.end();
-  
+
   appConfig->lastSavedTime = millis();
-  Serial.println("[PORTAL] Configuration saved to NVS");
+  appConfig->configPendingSync = true;
+  Serial.println("[PORTAL] Configuration saved to NVS (pending Firebase sync)");
 }
 
 void CaptivePortal::loadConfigFromNvs() {

@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:intl/intl.dart';
 import '../models/device.dart';
 import '../services/firebase_service.dart';
+import '../services/power_sequence_service.dart';
 import 'package:logger/logger.dart';
+
+final DateFormat _kDayKeyFormat = DateFormat('yyyy-MM-dd');
 
 class DeviceProvider extends ChangeNotifier {
   final FirebaseService _firebaseService = FirebaseService();
@@ -31,6 +35,22 @@ class DeviceProvider extends ChangeNotifier {
   // ── Online detection state ─────────────────────────────────────────────
   int _lastStatusEventMs = 0;
 
+  // ── AUTO sequence state (local — mirrors the Firebase-synced pcTransition
+  //    flag so this device's own UI updates instantly, before the round trip) ──
+  bool _localPcTransitioning = false;
+
+  // ── Scheduler state ─────────────────────────────────────────────────────
+  // Keys: 'relay1'..'relay8', 'relay10' (SP), 'auto' (PC/AUTO). One active
+  // schedule per slot. Countdown is always derived from targetAt locally —
+  // never written to Firebase per second.
+  StreamSubscription<DatabaseEvent>? _schedulesSubscription;
+  final Map<String, ScheduleEntry> _schedules = {};
+  Timer? _scheduleExecutorTimer;
+
+  // ── PC daily usage totals (Today / This Week / This Month) ─────────────
+  StreamSubscription<DatabaseEvent>? _usageSubscription;
+  final Map<String, int> _usageMsByDay = {};
+
   Device? get selectedDevice => _selectedDevice;
   Map<String, dynamic>? get selectedDeviceConfig => _selectedDeviceConfig;
   List<Device> get devices => _devices;
@@ -45,6 +65,46 @@ class DeviceProvider extends ChangeNotifier {
   /// Robust online check: true if we received a Firebase status event
   /// recently OR the heartbeat timestamp is fresh.
   bool get isDeviceOnline => _isDeviceOnline();
+
+  /// True while an AUTO ON/OFF sequence is running — either started locally
+  /// on this device, or synced from Firebase because another logged-in
+  /// device started it. Drives the orange "working" state in the UI.
+  bool get isPcTransitioning =>
+      _localPcTransitioning || (_deviceStatus?.pcTransitionActive ?? false);
+
+  // ── Scheduler getters ────────────────────────────────────────────────────
+  ScheduleEntry? scheduleFor(String key) => _schedules[key];
+  bool hasScheduleFor(String key) => _schedules.containsKey(key);
+  List<ScheduleEntry> get activeSchedules =>
+      _schedules.values.toList()
+        ..sort((a, b) => a.targetAt.compareTo(b.targetAt));
+
+  /// The soonest upcoming scheduled action across all slots, if any.
+  ScheduleEntry? get nextScheduledAction =>
+      activeSchedules.isEmpty ? null : activeSchedules.first;
+
+  // ── PC usage totals ──────────────────────────────────────────────────────
+  int _sumUsageSince(DateTime cutoff) {
+    var total = 0;
+    _usageMsByDay.forEach((dayKey, ms) {
+      final day = DateTime.tryParse(dayKey);
+      if (day != null && !day.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day))) {
+        total += ms;
+      }
+    });
+    return total;
+  }
+
+  int get todayPcUsageMs {
+    final now = DateTime.now();
+    return _usageMsByDay[_kDayKeyFormat.format(now)] ?? 0;
+  }
+
+  int get weekPcUsageMs =>
+      _sumUsageSince(DateTime.now().subtract(const Duration(days: 6)));
+
+  int get monthPcUsageMs =>
+      _sumUsageSince(DateTime.now().subtract(const Duration(days: 29)));
 
   bool _isDeviceOnline() {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -142,6 +202,12 @@ class DeviceProvider extends ChangeNotifier {
     _logsSubscription = null;
     _timerSubscription?.cancel();
     _timerSubscription = null;
+    _schedulesSubscription?.cancel();
+    _schedulesSubscription = null;
+    _usageSubscription?.cancel();
+    _usageSubscription = null;
+    _scheduleExecutorTimer?.cancel();
+    _scheduleExecutorTimer = null;
   }
 
   Map<String, dynamic> _mapSnapshot(dynamic value) {
@@ -316,6 +382,18 @@ class DeviceProvider extends ChangeNotifier {
         _subscribeToDeviceStatus(deviceId);
         _subscribeToDeviceLogs(deviceId);
         _subscribeToRelayTimers(deviceId);
+        _subscribeToSchedules(deviceId);
+        _subscribeToUsage(deviceId);
+
+        // Locally checks active schedules against the current time and
+        // fires any that are due — never polls Firebase, only reads the
+        // in-memory map already kept in sync by the schedules stream above.
+        _scheduleExecutorTimer?.cancel();
+        _scheduleExecutorTimer = Timer.periodic(const Duration(seconds: 1), (
+          _,
+        ) {
+          _checkDueSchedules(deviceId);
+        });
       } else {
         _selectedDevice = null;
         _deviceStatus = null;
@@ -417,6 +495,132 @@ class DeviceProvider extends ChangeNotifier {
         );
   }
 
+  // ── Schedules subscription ──────────────────────────────────────────────
+  void _subscribeToSchedules(String deviceId) {
+    _schedulesSubscription?.cancel();
+    _schedulesSubscription = _firebaseService
+        .watchSchedules(deviceId)
+        .listen(
+          (event) {
+            _schedules.clear();
+            final value = event.snapshot.value;
+            if (value is Map) {
+              for (final entry in value.entries) {
+                final key = entry.key.toString();
+                if (entry.value is Map) {
+                  _schedules[key] = ScheduleEntry.fromJson(
+                    key,
+                    entry.value as Map,
+                  );
+                }
+              }
+            }
+            notifyListeners();
+          },
+          onError: (error) {
+            _logger.e('Error watching schedules: $error');
+          },
+        );
+  }
+
+  /// Checks in-memory schedules against the current time and fires any that
+  /// are due. Purely local comparison every second — the only Firebase
+  /// traffic this generates is the (rare) write when a schedule actually
+  /// fires, not a per-tick read or write.
+  void _checkDueSchedules(String deviceId) {
+    if (_schedules.isEmpty) return;
+    final due = _schedules.values.where((s) => s.isDue).toList();
+    for (final entry in due) {
+      _executeSchedule(deviceId, entry);
+    }
+  }
+
+  void _executeSchedule(String deviceId, ScheduleEntry entry) {
+    // Remove immediately so our own next tick (and the background service,
+    // if also running) doesn't fire it a second time.
+    _schedules.remove(entry.key);
+    notifyListeners();
+    unawaited(_firebaseService.clearSchedule(deviceId, entry.key));
+
+    if (entry.key == 'auto') {
+      unawaited(runAutoPowerSequence(deviceId));
+      return;
+    }
+    if (!entry.key.startsWith('relay')) return;
+    final relayId = int.tryParse(entry.key.substring(5));
+    if (relayId == null) return;
+    final turnOn = entry.action == 'ON';
+    if (relayId == 10) {
+      // relay10 (SP) — manual-hold relay, use the direct setter like the
+      // dashboard's SP button does.
+      unawaited(setRelayStateDirect(deviceId, relayId, turnOn));
+    } else {
+      unawaited(setRelayState(deviceId, relayId, turnOn));
+    }
+  }
+
+  /// Creates or replaces the single active schedule for [key] ('relay1'..
+  /// 'relay8', 'relay10', or 'auto'). One write — the countdown shown in the
+  /// UI is always computed locally from [targetAt].
+  Future<void> setSchedule(
+    String deviceId,
+    String key, {
+    required DateTime targetAt,
+    String? action,
+  }) async {
+    final entry = ScheduleEntry(
+      key: key,
+      targetAt: targetAt,
+      action: action,
+      createdAt: DateTime.now(),
+    );
+    _schedules[key] = entry; // optimistic
+    notifyListeners();
+    try {
+      await _firebaseService.setSchedule(
+        deviceId,
+        key,
+        targetAt: targetAt,
+        action: action,
+      );
+    } catch (e) {
+      _logger.e('Error setting schedule: $e');
+    }
+  }
+
+  Future<void> cancelSchedule(String deviceId, String key) async {
+    _schedules.remove(key);
+    notifyListeners();
+    await _firebaseService.clearSchedule(deviceId, key);
+  }
+
+  // ── Usage subscription ──────────────────────────────────────────────────
+  void _subscribeToUsage(String deviceId) {
+    _usageSubscription?.cancel();
+    _usageSubscription = _firebaseService
+        .watchUsage(deviceId)
+        .listen(
+          (event) {
+            _usageMsByDay.clear();
+            final value = event.snapshot.value;
+            if (value is Map) {
+              for (final entry in value.entries) {
+                final dayKey = entry.key.toString();
+                if (entry.value is Map) {
+                  final totalMs = (entry.value as Map)['totalMs'];
+                  _usageMsByDay[dayKey] =
+                      totalMs is num ? totalMs.toInt() : 0;
+                }
+              }
+            }
+            notifyListeners();
+          },
+          onError: (error) {
+            _logger.e('Error watching usage: $error');
+          },
+        );
+  }
+
   // ── Timer save helpers ─────────────────────────────────────────────────
   void _saveTimerStart(String deviceId, int relayId) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -442,6 +646,13 @@ class DeviceProvider extends ChangeNotifier {
     };
     // Async Firebase write (only 1 write)
     _firebaseService.saveRelayTimerStop(deviceId, relayId, elapsed);
+
+    // PC runtime totals (Today/Week/Month): one atomic increment per
+    // power-off event, keyed by local calendar day. Never per second.
+    if (relayId == PowerSequenceService.kRelayPcMain && elapsed > 0) {
+      final dayKey = _kDayKeyFormat.format(DateTime.now());
+      unawaited(_firebaseService.addPcUsage(deviceId, dayKey, elapsed));
+    }
   }
 
   Future<void> setRelayState(String deviceId, int relayId, bool isOn) async {
@@ -552,22 +763,43 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
+  /// AUTO: inspects the current PC state (Relay 1 — the authoritative PC
+  /// power indicator) and runs the matching ON or OFF sequence. Never
+  /// blindly toggles. Safe to call repeatedly; re-entrant calls are ignored
+  /// while a sequence is already running.
   Future<void> runAutoPowerSequence(String deviceId) async {
     final device = _selectedDevice;
-    if (device == null) {
+    if (device == null || _localPcTransitioning) {
       return;
     }
 
-    final plugRelays = device.relays.where(
-      (relay) => isPlugRelay(relay.id) && relay.enabled,
+    final pcRelay = device.relays.firstWhere(
+      (relay) => relay.id == PowerSequenceService.kRelayPcMain,
+      orElse: () => Relay.placeholder(PowerSequenceService.kRelayPcMain),
+    );
+    final pcCurrentlyOn = pcRelay.isOn;
+    final kind = PowerSequenceService.kindFor(pcCurrentlyOn: pcCurrentlyOn);
+
+    _localPcTransitioning = true;
+    notifyListeners();
+    unawaited(
+      _firebaseService.setPcTransition(deviceId, active: true, kind: kind),
     );
 
-    for (final relay in plugRelays) {
-      await setRelayState(deviceId, relay.id, false);
+    try {
+      for (final step in PowerSequenceService.stepsFor(
+        pcCurrentlyOn: pcCurrentlyOn,
+      )) {
+        if (step.delayBefore > Duration.zero) {
+          await Future<void>.delayed(step.delayBefore);
+        }
+        await setRelayStateDirect(deviceId, step.relayId, step.turnOn);
+      }
+    } finally {
+      _localPcTransitioning = false;
+      notifyListeners();
+      unawaited(_firebaseService.setPcTransition(deviceId, active: false));
     }
-
-    await Future<void>.delayed(const Duration(seconds: 2));
-    await setRelayState(deviceId, 9, true);
   }
 
   Future<void> toggleSOS(String deviceId) async {

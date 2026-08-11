@@ -6,12 +6,14 @@ import 'models/device.dart';
 import 'providers/auth_provider.dart';
 import 'providers/device_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/control_screen.dart';
 import 'screens/dashboard_screen.dart';
-import 'screens/relays_screen.dart';
 import 'screens/sequences_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/app_environment.dart';
+import 'services/background_service_controller.dart';
 import 'services/firebase_service.dart';
+import 'services/notification_service.dart';
 import 'utils/app_theme.dart';
 
 void main() async {
@@ -31,6 +33,15 @@ void main() async {
     await FirebaseService().initialize();
   } catch (e) {
     debugPrint('Firebase Service initialization error: $e');
+  }
+
+  try {
+    await NotificationService.initialize();
+    await BackgroundServiceController.initializeService();
+  } catch (e) {
+    // Persistent notification is a best-effort enhancement — the app
+    // itself must keep working even if the platform denies it.
+    debugPrint('Notification service initialization error: $e');
   }
 
   runApp(const MyApp());
@@ -84,10 +95,18 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _deviceId = 'device_001';
 
   @override
+  void initState() {
+    super.initState();
+    // Best-effort: keep the persistent status notification alive for as
+    // long as the user stays signed in on this device.
+    BackgroundServiceController.ensureStarted();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
+      const ControlScreen(deviceId: _deviceId),
       const DashboardScreen(deviceId: _deviceId),
-      const RelaysScreen(deviceId: _deviceId),
       const SequencesScreen(deviceId: _deviceId),
       const SettingsScreen(deviceId: _deviceId),
     ];
@@ -128,12 +147,12 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: (index) => setState(() => _selectedIndex = index),
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_rounded),
-              label: 'DASHBOARD',
+              icon: Icon(Icons.toggle_on_outlined),
+              label: 'CONTROL',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.toggle_on_outlined),
-              label: 'RELAYS',
+              icon: Icon(Icons.dashboard_rounded),
+              label: 'DASHBOARD',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.view_list_rounded),

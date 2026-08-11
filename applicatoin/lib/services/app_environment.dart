@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 
 class AppEnvironment {
@@ -22,6 +23,29 @@ class AppEnvironment {
     }
 
     _loaded = true;
+    _warnIfPlaceholder();
+  }
+
+  /// A malformed/placeholder API key doesn't throw — it reaches
+  /// Firebase.initializeApp() as a literal string and only fails later, at
+  /// login, with a cryptic "API key not valid" error. Surface it loudly at
+  /// startup instead so it's obvious this is a config problem, not an
+  /// account problem.
+  static void _warnIfPlaceholder() {
+    final key = firebaseApiKey;
+    final looksPlaceholder =
+        key.isEmpty ||
+        key.contains('YOUR_') ||
+        key.contains('PUT_YOUR') ||
+        !key.startsWith('AIza');
+    if (looksPlaceholder) {
+      debugPrint(
+        'AppEnvironment: FIREBASE_API_KEY is missing or a placeholder '
+        '("$key"). Firebase sign-in will fail with "API key not valid" '
+        'until applicatoin/assets/.env (and/or repo-root .env) contains '
+        'the real project values from the Firebase console.',
+      );
+    }
   }
 
   static void _parse(String content) {

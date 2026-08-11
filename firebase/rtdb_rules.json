@@ -130,6 +130,48 @@
               ".validate": "newData.isString() && newData.val().length <= 500"
             }
           }
+        },
+        "timers": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "$relayId": {
+            "startedAt": {
+              ".validate": "newData.isNumber() || newData.val() == null"
+            },
+            "stoppedAt": {
+              ".validate": "newData.isNumber() || newData.val() == null"
+            },
+            "lastElapsedMs": {
+              ".validate": "newData.isNumber() || newData.val() == null"
+            }
+          }
+        },
+        "schedules": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "$scheduleKey": {
+            "targetAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "action": {
+              ".validate": "newData.isString()"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
+        "usage": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "$dayKey": {
+            "totalMs": {
+              ".validate": "newData.isNumber()"
+            },
+            "sessions": {
+              ".validate": "newData.isNumber()"
+            }
+          }
         }
       }
     },

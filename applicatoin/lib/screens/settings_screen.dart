@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/device.dart';
 import '../providers/device_provider.dart';
+import '../services/background_service_controller.dart';
 import '../services/firebase_service.dart';
+import '../services/notification_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String deviceId;
@@ -189,6 +191,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      await BackgroundServiceController.stop();
+      await NotificationService.cancel();
       await FirebaseService().signOut();
       if (mounted) {
         navigator.pushNamedAndRemoveUntil('/login', (_) => false);

@@ -300,10 +300,17 @@ void syncWithFirebase() {
   // Sync status
   gRuntimeState.relayStates = gRelayManager.getAllStates();
   gFirebaseClient.writeStatus(gRuntimeState, gAppConfig);
-  
-  // Write config revision if online changes occurred
-  if (millis() - gAppConfig.lastSavedTime > 60000) {
-    gFirebaseClient.writeDeviceConfig(gAppConfig);
+
+  // Offline-first captive portal sync: push the locally-saved configuration
+  // to Firebase as soon as we're back online, instead of waiting on a fixed
+  // timer. This covers both captive-portal edits made while offline and the
+  // initial NVS-loaded config on every boot.
+  if (gAppConfig.configPendingSync) {
+    if (gFirebaseClient.writeDeviceConfig(gAppConfig)) {
+      gAppConfig.configPendingSync = false;
+      gAppConfig.lastSavedTime = millis();
+      Serial.println("[SYNC] Pending configuration change synced to Firebase");
+    }
   }
 }
 

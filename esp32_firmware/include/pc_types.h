@@ -69,6 +69,11 @@ struct AppConfig {
   uint32_t desiredPollIntervalMs = 2000;
   uint32_t configRevision = 1;
   uint32_t lastSavedTime = 0;
+
+  // Offline-first captive portal sync: true whenever the locally-saved (NVS)
+  // configuration has not yet been confirmed pushed to Firebase. Starts true
+  // so a freshly booted device always re-syncs once connectivity returns.
+  bool configPendingSync = true;
 };
 
 struct RelayState {

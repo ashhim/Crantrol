@@ -45,6 +45,10 @@ dependencies:
   # Logging
   logger: ^2.4.0
 
+  # Persistent status notification (foreground service + rich notification)
+  flutter_local_notifications: ^19.5.0
+  flutter_background_service: ^5.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

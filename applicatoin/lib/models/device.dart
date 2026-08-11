@@ -454,6 +454,11 @@ class DeviceStatus {
   final int uptimeMs;
   final String deviceName;
 
+  // AUTO ON/OFF sequence in progress — synced so every logged-in device can
+  // render the orange "working" state, not just the device that triggered it.
+  final bool pcTransitionActive;
+  final String pcTransitionKind;
+
   DeviceStatus({
     required this.deviceId,
     this.isOnline = false,
@@ -471,10 +476,15 @@ class DeviceStatus {
     this.lastSeenAt = 0,
     this.uptimeMs = 0,
     this.deviceName = '',
+    this.pcTransitionActive = false,
+    this.pcTransitionKind = '',
   });
 
   factory DeviceStatus.fromJson(Map<dynamic, dynamic> json) {
     final relayList = _normalizeRelayStatuses(json['relays']);
+    final pcTransition = json['pcTransition'];
+    final pcTransitionMap =
+        pcTransition is Map ? Map<dynamic, dynamic>.from(pcTransition) : null;
     final heartbeatValue = json['heartbeatAt'] ?? json['lastSeenAt'] ?? 0;
     final heartbeatMs = heartbeatValue is num ? heartbeatValue.toInt() : 0;
     final hasFreshHeartbeat = Device.isHeartbeatFresh(heartbeatMs);
@@ -521,6 +531,8 @@ class DeviceStatus {
               : heartbeatMs,
       uptimeMs: json['uptimeMs'] is num ? (json['uptimeMs'] as num).toInt() : 0,
       deviceName: json['deviceName'] ?? '',
+      pcTransitionActive: _readBoolValue(pcTransitionMap?['active'], false),
+      pcTransitionKind: _readStringValue(pcTransitionMap?['kind'], ''),
     );
   }
 }
@@ -547,6 +559,55 @@ class RelayStatus {
     'isOn': isOn,
     'lastCommand': lastCommand,
   };
+}
+
+/// A scheduled relay/AUTO action created by the long-press scheduler.
+/// `key` is one of 'relay1'..'relay8', 'relay10' (SP) or 'auto' (PC/AUTO).
+/// Stored in Firebase as a target timestamp only — the countdown is always
+/// computed locally from [targetAt], never written per second.
+class ScheduleEntry {
+  final String key;
+  final DateTime targetAt;
+  final String? action; // 'ON' | 'OFF' — null for 'auto' (state decides)
+  final DateTime createdAt;
+
+  const ScheduleEntry({
+    required this.key,
+    required this.targetAt,
+    this.action,
+    required this.createdAt,
+  });
+
+  Duration get remaining {
+    final d = targetAt.difference(DateTime.now());
+    return d.isNegative ? Duration.zero : d;
+  }
+
+  bool get isDue => !targetAt.isAfter(DateTime.now());
+
+  factory ScheduleEntry.fromJson(String key, Map<dynamic, dynamic> json) {
+    final targetAtMs =
+        json['targetAt'] is num ? (json['targetAt'] as num).toInt() : 0;
+    final createdAtMs =
+        json['createdAt'] is num ? (json['createdAt'] as num).toInt() : 0;
+    return ScheduleEntry(
+      key: key,
+      targetAt: DateTime.fromMillisecondsSinceEpoch(targetAtMs),
+      action: json['action'] is String ? json['action'] as String : null,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+    );
+  }
+}
+
+/// Human-readable label for a schedule slot key.
+String scheduleSlotLabel(String key) {
+  if (key == 'auto') return 'AUTO';
+  if (key == 'relay10') return 'SP POWER';
+  if (key.startsWith('relay')) {
+    final id = int.tryParse(key.substring(5));
+    if (id != null) return relayDisplayName(id);
+  }
+  return key.toUpperCase();
 }
 
 class DeviceLog {

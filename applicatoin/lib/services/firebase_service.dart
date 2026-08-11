@@ -331,4 +331,76 @@ class FirebaseService {
   Stream<DatabaseEvent> watchRelayTimers(String deviceId) {
     return _database.ref('devices/$deviceId/timers').onValue;
   }
+
+  // ── PC transition state (AUTO sequence in progress) ─────────────────────
+  // Written once at sequence start and once at sequence end (not polled),
+  // so every logged-in device can render the orange "working" state while
+  // any one device is running the AUTO ON/OFF sequence.
+  Future<void> setPcTransition(
+    String deviceId, {
+    required bool active,
+    String kind = '',
+  }) async {
+    try {
+      await _database.ref('devices/$deviceId/status/pcTransition').set({
+        'active': active,
+        'kind': kind,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      // Non-critical — silent fail, UI falls back to relay-state-only colors
+    }
+  }
+
+  // ── Scheduled actions (long-press scheduler) ─────────────────────────────
+  // One write to set a schedule, one write to clear it when it fires or is
+  // cancelled. No per-second writes — the countdown is computed locally by
+  // every client from `targetAt`.
+  Stream<DatabaseEvent> watchSchedules(String deviceId) {
+    return _database.ref('devices/$deviceId/schedules').onValue;
+  }
+
+  Future<void> setSchedule(
+    String deviceId,
+    String key, {
+    required DateTime targetAt,
+    String? action,
+  }) async {
+    await _database.ref('devices/$deviceId/schedules/$key').set({
+      'targetAt': targetAt.millisecondsSinceEpoch,
+      if (action != null) 'action': action,
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> clearSchedule(String deviceId, String key) async {
+    try {
+      await _database.ref('devices/$deviceId/schedules/$key').remove();
+    } catch (e) {
+      // Non-critical — a stale schedule node just gets overwritten next time
+    }
+  }
+
+  // ── PC daily usage totals (Today / Week / Month) ─────────────────────────
+  // One atomic increment per PC power-off event — never per second. Keyed
+  // by local calendar day so Today/Week/Month can be summed client-side
+  // from a small, bounded range read.
+  Future<void> addPcUsage(String deviceId, String dayKey, int elapsedMs) async {
+    try {
+      await _database.ref('devices/$deviceId/usage/$dayKey').update({
+        'totalMs': ServerValue.increment(elapsedMs),
+        'sessions': ServerValue.increment(1),
+      });
+    } catch (e) {
+      // Non-critical — historical totals are best-effort
+    }
+  }
+
+  Stream<DatabaseEvent> watchUsage(String deviceId, {int lastDays = 31}) {
+    return _database
+        .ref('devices/$deviceId/usage')
+        .orderByKey()
+        .limitToLast(lastDays)
+        .onValue;
+  }
 }

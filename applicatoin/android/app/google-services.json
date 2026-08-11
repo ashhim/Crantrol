@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "634572314950",
+    "firebase_url": "https://hashpc-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "hashpc",
+    "storage_bucket": "hashpc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:634572314950:android:cb56b7b276cfb9a6a1ad47",
+        "android_client_info": {
+          "package_name": "crabox.com.crantrol"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNmxSDWnLtv_vrqlUB4i-rKjO-bK-pWEA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

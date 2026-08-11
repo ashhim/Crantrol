@@ -1,8 +1,28 @@
+// ==========================================================================
+// CRANTROL Sequences Screen
+//
+// Focused only on the system's built-in sequences/macros — not a relay
+// page. AUTO supports the same tap = run now / long-press = schedule
+// behavior as the Control screen, with live status and countdown.
+// ==========================================================================
+
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/device.dart';
 import '../providers/device_provider.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/schedule_badge.dart';
+import '../widgets/schedule_dialog.dart';
+
+const _kPanel = Color(0xFF0B1220);
+const _kPanelBorder = Color(0xFF1F2937);
+const _kGreen = Color(0xFF22C55E);
+const _kRed = Color(0xFFEF4444);
+const _kAmber = Color(0xFFF97316);
+const _kTextMuted = Color(0xFF94A3B8);
 
 class SequencesScreen extends StatefulWidget {
   final String deviceId;
@@ -16,6 +36,22 @@ class SequencesScreen extends StatefulWidget {
 class _SequencesScreenState extends State<SequencesScreen> {
   bool _sequenceInProgress = false;
   String _sequenceStatus = 'Idle';
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Purely local — redraws the AUTO countdown text. No network activity.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   Future<void> _executeSequence(
     Future<void> Function() sequence,
@@ -67,6 +103,9 @@ class _SequencesScreenState extends State<SequencesScreen> {
             return const Center(child: Text('Device not found'));
           }
 
+          final autoSchedule = deviceProvider.scheduleFor('auto');
+          final autoRunning = deviceProvider.isPcTransitioning;
+
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             child: Column(
@@ -75,18 +114,15 @@ class _SequencesScreenState extends State<SequencesScreen> {
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B1220),
+                    color: _kPanel,
                     borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: const Color(0xFF1F2937),
-                      width: 1,
-                    ),
+                    border: Border.all(color: _kPanelBorder, width: 1),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'SEQUENCE CONTROLS',
+                        'SEQUENCE STATUS',
                         style: Theme.of(
                           context,
                         ).textTheme.titleMedium?.copyWith(
@@ -96,12 +132,39 @@ class _SequencesScreenState extends State<SequencesScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        _sequenceStatus,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF94A3B8),
-                        ),
+                      Row(
+                        children: [
+                          Icon(
+                            autoRunning
+                                ? Icons.autorenew_rounded
+                                : Icons.check_circle_outline,
+                            size: 16,
+                            color: autoRunning ? _kAmber : _kGreen,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            autoRunning ? 'AUTO sequence running…' : _sequenceStatus,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: _kTextMuted),
+                          ),
+                        ],
                       ),
+                      if (autoSchedule != null) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule, size: 14, color: _kRed),
+                            const SizedBox(width: 6),
+                            Text(
+                              'AUTO scheduled → ',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: _kTextMuted),
+                            ),
+                            ScheduleCountdownBadge(entry: autoSchedule),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -155,16 +218,30 @@ class _SequencesScreenState extends State<SequencesScreen> {
                 const SizedBox(height: 16),
                 _buildSequenceCard(
                   context,
-                  title: 'Shutdown Sequence',
+                  title: 'AUTO Power Sequence',
                   description:
-                      'Safely shut down plugs then pulse the power relay.',
-                  buttonLabel: 'Run Sequence',
+                      'Inspects the current PC state and runs the matching '
+                      'ON or OFF sequence automatically — same as the '
+                      'Control screen AUTO button. Tap to run now, hold to '
+                      'schedule for later.',
+                  buttonLabel: 'Run AUTO',
                   isPrimary: true,
+                  schedule: autoSchedule,
                   onPressed: () async {
                     await _executeSequence(
                       () =>
                           deviceProvider.runAutoPowerSequence(widget.deviceId),
-                      'Shutdown Sequence',
+                      'AUTO Sequence',
+                    );
+                  },
+                  onLongPress: () {
+                    HapticFeedback.mediumImpact();
+                    showSchedulerDialog(
+                      context,
+                      deviceId: widget.deviceId,
+                      scheduleKey: 'auto',
+                      label: 'AUTO',
+                      showOnOffToggle: false,
                     );
                   },
                 ),
@@ -182,48 +259,67 @@ class _SequencesScreenState extends State<SequencesScreen> {
     required String description,
     required String buttonLabel,
     required VoidCallback onPressed,
+    VoidCallback? onLongPress,
+    ScheduleEntry? schedule,
     bool isPrimary = false,
   }) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220),
+        color: _kPanel,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF1F2937), width: 1),
+        border: Border.all(color: _kPanelBorder, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (schedule != null) ScheduleCountdownBadge(entry: schedule),
+            ],
           ),
           const SizedBox(height: 10),
           Text(
             description,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF94A3B8)),
+            ).textTheme.bodySmall?.copyWith(color: _kTextMuted),
           ),
+          if (onLongPress != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Tap = run now · Hold = schedule',
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: _kTextMuted),
+            ),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onPressed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    isPrimary
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFF1E293B),
-                foregroundColor: isPrimary ? Colors.black : Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: Text(
-                buttonLabel,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+            child: GestureDetector(
+              onLongPress: onLongPress,
+              child: ElevatedButton(
+                onPressed: onPressed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      isPrimary ? _kGreen : const Color(0xFF1E293B),
+                  foregroundColor: isPrimary ? Colors.black : Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: Text(
+                  buttonLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ),
           ),

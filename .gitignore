@@ -4,7 +4,6 @@ applicatoin/assets/.env
 **/.env.local
 **/.env.*
 !.env.example
-!applicatoin/assets/.env
 
 **/.dart_tool/
 **/build/

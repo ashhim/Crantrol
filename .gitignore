@@ -22,6 +22,12 @@ applicatoin/macos/Flutter/Flutter-Generated.xcconfig
 applicatoin/macos/Flutter/flutter_export_environment.sh
 applicatoin/android/local.properties
 
+# Contains a real Firebase project API key/app IDs. Not required at build
+# time (the google-services Gradle plugin is not applied — Firebase init
+# goes through firebase_options.dart -> AppEnvironment -> assets/.env
+# instead), so it must stay local-only rather than committed.
+applicatoin/android/app/google-services.json
+
 **/*.log
 **/*.tmp
 **/*.swp

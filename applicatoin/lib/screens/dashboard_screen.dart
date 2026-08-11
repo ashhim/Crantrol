@@ -92,8 +92,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           for (final rs in status?.relayStates ?? const <RelayStatus>[])
             rs.id: rs,
         };
-        final pcOn =
-            (rsMap[PowerSequenceService.kRelayPcMain]?.isOn) ?? false;
+        // Authoritative PC state — GPIO45/PLED via DeviceProvider, never
+        // assumed from Relay 1.
+        final pcOn = dp.pcActualOn;
         final isOnline = dp.isDeviceOnline;
         final pcTimer = dp.relayTimerData(PowerSequenceService.kRelayPcMain);
 
@@ -113,6 +114,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   isOnline: isOnline,
                   pcOn: pcOn,
                   pcTransitioning: dp.isPcTransitioning,
+                  pcTransitionFailed: dp.isPcTransitionFailed,
                 ),
                 const SizedBox(height: 10),
                 _runtimeTotals(dp, pcTimer, pcOn),
@@ -120,6 +122,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _scheduledActions(dp),
                 const SizedBox(height: 10),
                 _relayActivity(device, rsMap, dp),
+                const SizedBox(height: 10),
+                _devices(dp),
               ],
             ),
           ),
@@ -410,5 +414,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+  }
+
+  // ── LAN devices — ESP32's local ARP-based scan, dynamic subnet ─────────
+  Widget _devices(DeviceProvider dp) {
+    final devices = [...dp.networkDevices]
+      ..sort((a, b) {
+        if (a.active != b.active) return a.active ? -1 : 1;
+        return a.ip.compareTo(b.ip);
+      });
+    final activeCount = devices.where((d) => d.active).length;
+
+    return _sectionCard(
+      title: 'DEVICES',
+      icon: Icons.lan_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                dp.networkSubnet.isEmpty
+                    ? 'Subnet: --'
+                    : 'Subnet: ${dp.networkSubnet}',
+                style: GoogleFonts.orbitron(
+                  color: _kTextMuted,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: .5,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$activeCount / ${devices.length} ACTIVE',
+                style: GoogleFonts.orbitron(
+                  color: _kGreen,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (devices.isEmpty)
+            Text(
+              'No devices discovered yet on the LAN.',
+              style: GoogleFonts.orbitron(
+                color: _kTextMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (final device in devices) ...[
+                  _deviceRow(device),
+                  if (device != devices.last) const SizedBox(height: 6),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deviceRow(NetworkDevice device) {
+    final label = device.hostname.isNotEmpty ? device.hostname : device.ip;
+    final agoText = _fmtAgoMs(device.lastSeenAgoMs);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kCard,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _kPanelBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: device.active ? _kGreen : _kRed.withOpacity(0.4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.orbitron(
+                    color: _kTextPrimary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  device.hostname.isNotEmpty ? device.ip : device.mac,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.orbitron(
+                    color: _kTextMuted,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            device.active ? 'ACTIVE · $agoText' : 'INACTIVE · $agoText',
+            style: GoogleFonts.orbitron(
+              color: device.active ? _kGreen : _kTextMuted,
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtAgoMs(int ms) {
+    if (ms < 5000) return 'just now';
+    final d = Duration(milliseconds: ms);
+    if (d.inMinutes < 1) return '${d.inSeconds}s ago';
+    if (d.inHours < 1) return '${d.inMinutes}m ago';
+    if (d.inDays < 1) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
   }
 }

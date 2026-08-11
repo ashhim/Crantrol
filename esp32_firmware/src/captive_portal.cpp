@@ -610,6 +610,11 @@ String CaptivePortal::getDashboardHtml() {
   <div class="container">
     <div class="grid">
       <div class="card">
+        <h2>PC Actual State</h2>
+        <div id="pc-actual-status"></div>
+      </div>
+
+      <div class="card">
         <h2>Network Status</h2>
         <div id="network-status"></div>
       </div>
@@ -748,7 +753,20 @@ String CaptivePortal::getDashboardHtml() {
       try {
         const response = await fetch('/api/status');
         const data = await response.json();
-        
+
+        document.getElementById('pc-actual-status').innerHTML = `
+          <div class="status-item">
+            <span class="label">PC State (GPIO45 / PLED)</span>
+            <span class="value">${data.pcActualOn ? 'ON' : 'OFF'}
+              <span class="indicator ${data.pcActualOn ? 'active' : 'inactive'}"></span>
+            </span>
+          </div>
+          <div class="status-item">
+            <span class="label">Reading Stable</span>
+            <span class="value">${data.pcActualStable ? 'Yes' : 'Settling...'}</span>
+          </div>
+        `;
+
         document.getElementById('network-status').innerHTML = `
           <div class="status-item">
             <span class="label">Ethernet Link</span>
@@ -828,6 +846,10 @@ String CaptivePortal::getDashboardHtml() {
       }
     }
 
+    // Mirrors the canonical PC ON/OFF sequence used by the app (relay
+    // timings must stay identical) — direction is decided from the actual
+    // GPIO45/PLED state, never assumed, and never blindly repeats the same
+    // steps regardless of current state.
     async function runAutoSequence() {
       if (autoSequenceBusy) {
         return;
@@ -837,21 +859,42 @@ String CaptivePortal::getDashboardHtml() {
       const button = document.getElementById('autoPowerButton');
       const status = document.getElementById('autoPowerStatus');
       button.disabled = true;
-      status.textContent = 'Powering down PLUG1/PLUG2...';
 
       try {
-        await controlRelay(1, 'OFF');
-        await controlRelay(2, 'OFF');
-        status.textContent = 'Waiting 10 seconds...';
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        status.textContent = 'Holding PC front power...';
-        await controlRelay(9, 'PULSE');
-        status.textContent = 'Sequence complete';
+        const statusResp = await fetch('/api/status');
+        const statusData = await statusResp.json();
+        const pcOn = !!statusData.pcActualOn;
+
+        if (!pcOn) {
+          status.textContent = 'PC OFF — powering ON: Relay1/Relay2...';
+          await controlRelay(1, 'ON');
+          await controlRelay(2, 'ON');
+          status.textContent = 'Waiting 6 seconds...';
+          await new Promise(resolve => setTimeout(resolve, 6000));
+          status.textContent = 'Holding PC power button...';
+          await controlRelay(9, 'ON');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await controlRelay(9, 'OFF');
+          status.textContent = 'Sequence complete — PC powering on';
+        } else {
+          status.textContent = 'PC ON — holding PC power button...';
+          await controlRelay(9, 'ON');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await controlRelay(9, 'OFF');
+          status.textContent = 'Waiting 15 seconds...';
+          await new Promise(resolve => setTimeout(resolve, 15000));
+          status.textContent = 'Powering OFF: Relay1/Relay2...';
+          await controlRelay(1, 'OFF');
+          await controlRelay(2, 'OFF');
+          status.textContent = 'Sequence complete — PC powering off';
+        }
+      } catch (err) {
+        status.textContent = 'Sequence failed: ' + err;
       } finally {
         autoSequenceBusy = false;
         button.disabled = false;
-        status.textContent = 'Idle';
         updateStatus();
+        setTimeout(() => { status.textContent = 'Idle'; }, 4000);
       }
     }
     
@@ -1501,7 +1544,13 @@ String CaptivePortal::getJsonStatus() {
     doc["lastSeenAt"] = millis();
     doc["heartbeatAt"] = millis();
     doc["uptimeMs"] = millis();
-    
+
+    // Authoritative PC power state from the PLED sense input (GPIO45) —
+    // same debounced field synced to Firebase, exposed locally too so the
+    // offline portal dashboard reflects it without needing internet.
+    doc["pcActualOn"] = runtimeState->pcActualOn;
+    doc["pcActualStable"] = runtimeState->pcActualStable;
+
     JsonObject relaysObj = doc.createNestedObject("relays");
     for (const auto& state : runtimeState->relayStates) {
       String key = "relay" + String(state.relayId);

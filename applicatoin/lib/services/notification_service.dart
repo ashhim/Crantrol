@@ -104,13 +104,17 @@ class NotificationService {
     required String uptimeText,
     required bool online,
     required String networkSummary,
+    bool transitionFailed = false,
   }) async {
-    final pcLabel = transitioning ? 'WORKING' : (pcOn ? 'ON' : 'OFF');
+    final pcLabel =
+        transitionFailed ? 'UNCONFIRMED' : (transitioning ? 'WORKING' : (pcOn ? 'ON' : 'OFF'));
     final title = 'CRANTROL — PC $pcLabel';
     final body =
-        online
-            ? 'Uptime $uptimeText · $networkSummary'
-            : 'Device offline · last known: PC $pcLabel';
+        !online
+            ? 'Device offline · last known: PC $pcLabel'
+            : transitionFailed
+                ? 'GPIO45 never confirmed the expected state — check hardware'
+                : 'Uptime $uptimeText · $networkSummary';
 
     final actionTitle = pcOn ? 'TURN OFF PC' : 'TURN ON PC';
 
@@ -147,17 +151,22 @@ class NotificationService {
 
   /// Executes the same AUTO ON/OFF logic as the dashboard button, driven
   /// directly against Firebase (no DeviceProvider/BuildContext available
-  /// from a notification tap).
+  /// from a notification tap). Reads the authoritative GPIO45/PLED state
+  /// (status/pcActualOn), never Relay 1, and waits for it to confirm the
+  /// expected state after the sequence — writing a failure flag other
+  /// clients can see if it never does.
   static Future<void> runAutoFromNotification(String deviceId) async {
     final firebaseService = FirebaseService();
-    final snapshot =
-        await FirebaseDatabase.instance
-            .ref('devices/$deviceId/status/relays/relay${PowerSequenceService.kRelayPcMain}/state')
-            .get();
+    final pcRef = FirebaseDatabase.instance.ref(
+      'devices/$deviceId/status/pcActualOn',
+    );
+    final snapshot = await pcRef.get();
     final pcCurrentlyOn = snapshot.exists && snapshot.value == true;
+    final expectedOn = !pcCurrentlyOn;
     final kind = PowerSequenceService.kindFor(pcCurrentlyOn: pcCurrentlyOn);
 
     await firebaseService.setPcTransition(deviceId, active: true, kind: kind);
+    var failed = false;
     try {
       for (final step in PowerSequenceService.stepsFor(
         pcCurrentlyOn: pcCurrentlyOn,
@@ -171,8 +180,26 @@ class NotificationService {
           step.turnOn,
         );
       }
+
+      // Bounded, event-driven confirmation — one temporary realtime
+      // listener, auto-cancelled after the sequence resolves or times out.
+      // Not polling: the same push-based pattern used everywhere else.
+      var currentOn = pcCurrentlyOn;
+      final confirmed = await PowerSequenceService.waitForConfirmation(
+        expectedOn: expectedOn,
+        currentPcActualOn: () => currentOn,
+        pcActualOnStream: pcRef.onValue.map((event) {
+          currentOn = event.snapshot.value == true;
+          return currentOn;
+        }),
+      );
+      failed = !confirmed;
     } finally {
-      await firebaseService.setPcTransition(deviceId, active: false);
+      await firebaseService.setPcTransition(
+        deviceId,
+        active: false,
+        failed: failed,
+      );
     }
   }
 }

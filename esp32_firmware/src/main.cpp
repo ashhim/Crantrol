@@ -12,6 +12,8 @@
 #include "ethernet_manager.h"
 #include "firebase_client.h"
 #include "captive_portal.h"
+#include "pc_power_sensor.h"
+#include "network_scanner.h"
 
 // ===================== GLOBAL OBJECTS =====================
 AppConfig gAppConfig;
@@ -22,6 +24,8 @@ LedStatusManager gLedStatusManager(RGB_LED_PIN, STATUS_LED_PIN, NETWORK_LED_PIN,
 EthernetManager gEthernetManager;
 FirebaseClient gFirebaseClient;
 CaptivePortal gCaptivePortal;
+PcPowerSensor gPcPowerSensor(PC_PLED_PIN, PC_PLED_ACTIVE_HIGH, PC_PLED_DEBOUNCE_MS);
+NetworkScanner gNetworkScanner;
 
 // ===================== TIMING VARIABLES =====================
 uint32_t lastRelayStatusUpdate = 0;
@@ -77,7 +81,11 @@ void setup() {
   // Initialize indicators
   gLedStatusManager.initialize();
   Serial.println("[SETUP] LED status manager initialized");
-  
+
+  // Initialize PC PLED sense input (authoritative PC ON/OFF state)
+  gPcPowerSensor.initialize();
+  Serial.println("[SETUP] PC power sensor initialized");
+
   // Initialize W5500 Ethernet SPI and handlers
   gEthernetManager.initialize();
   Serial.println("[SETUP] Ethernet Manager initialized");
@@ -98,7 +106,15 @@ void loop() {
   
   // Run Ethernet task
   gEthernetManager.update();
-  
+
+  // Sample the PC PLED sense input (internally rate-limited/debounced —
+  // cheap to call every loop iteration)
+  gPcPowerSensor.update();
+
+  // LAN device discovery (internally rate-limited: one ARP probe per ~750ms,
+  // one ARP-table harvest per 5s — cheap to call every loop iteration)
+  gNetworkScanner.update();
+
   // Process status LEDs blinking status (every 100ms)
   if (now - lastLedUpdate > 100) {
     lastLedUpdate = now;
@@ -207,7 +223,12 @@ void updateNetworkStatus() {
   gRuntimeState.firebaseReady = (gFirebaseClient.getStatus() == FirebaseStatus::AUTHENTICATED);
   gRuntimeState.lastSeenAt = millis();
   gRuntimeState.heartbeatAt = millis();
-  
+
+  // Authoritative PC state — from the debounced PLED sense input, never
+  // from Relay 1.
+  gRuntimeState.pcActualOn = gPcPowerSensor.isOn();
+  gRuntimeState.pcActualStable = gPcPowerSensor.hasStableReading();
+
   // Internet loss buzzer alert with 15-second debounce
   static bool wasInternetAvailable = false;
   static uint32_t internetLostAt = 0;
@@ -300,6 +321,17 @@ void syncWithFirebase() {
   // Sync status
   gRuntimeState.relayStates = gRelayManager.getAllStates();
   gFirebaseClient.writeStatus(gRuntimeState, gAppConfig);
+
+  // LAN device inventory: only PUT to Firebase when the scanner reports a
+  // material change (new device, device dropped, active/inactive flip) —
+  // never on a per-tick or per-host basis.
+  if (gNetworkScanner.hasMaterialChange()) {
+    String subnetCidr = ETH.localIP().toString() + "/" + String(ETH.subnetCIDR());
+    if (gFirebaseClient.writeNetworkDevices(gNetworkScanner.devices(), subnetCidr)) {
+      gNetworkScanner.markSynced();
+      Serial.println("[SYNC] Network device list synced to Firebase");
+    }
+  }
 
   // Offline-first captive portal sync: push the locally-saved configuration
   // to Firebase as soon as we're back online, instead of waiting on a fixed

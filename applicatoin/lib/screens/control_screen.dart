@@ -20,7 +20,6 @@ import '../models/device.dart';
 import '../providers/device_provider.dart';
 import '../services/power_sequence_service.dart';
 import '../widgets/common_widgets.dart';
-import '../widgets/notification_panel.dart';
 import '../widgets/schedule_badge.dart';
 import '../widgets/schedule_dialog.dart';
 
@@ -59,6 +58,7 @@ class _ControlScreenState extends State<ControlScreen>
   bool _isSPPressed = false;
   bool _isSOSPressed = false;
   bool _isAlertPressed = false;
+  bool _failureSnackShown = false;
 
   @override
   void initState() {
@@ -144,6 +144,15 @@ class _ControlScreenState extends State<ControlScreen>
           return const CustomErrorWidget(message: 'Device not found');
         }
 
+        if (dp.isPcTransitionFailed && !_failureSnackShown) {
+          _failureSnackShown = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showTransitionFailureSnack(dp);
+          });
+        } else if (!dp.isPcTransitionFailed) {
+          _failureSnackShown = false;
+        }
+
         final relays = device.relays;
         final rsMap = <int, RelayStatus>{
           for (final rs in status?.relayStates ?? const <RelayStatus>[])
@@ -153,9 +162,6 @@ class _ControlScreenState extends State<ControlScreen>
         final plugs = relays.where((r) => isPlugRelay(r.id)).toList()
           ..sort((a, b) => a.id.compareTo(b.id));
 
-        final pcMainStatus =
-            rsMap[PowerSequenceService.kRelayPcMain] ??
-            RelayStatus.placeholder(PowerSequenceService.kRelayPcMain);
         final spStatus = rsMap[10] ?? RelayStatus.placeholder(10);
         final isOnline = dp.isDeviceOnline;
         final activeCount = relays.fold<int>(
@@ -170,13 +176,10 @@ class _ControlScreenState extends State<ControlScreen>
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
             child: Column(
               children: [
-                _header(isOnline),
-                const SizedBox(height: 10),
-                NotificationPanelCard(deviceId: widget.deviceId),
+                _header(isOnline, dp.pcActualOn),
                 const SizedBox(height: 10),
                 _mainControls(
                   dp,
-                  pcMainStatus,
                   rsMap[PowerSequenceService.kRelayPcButton] ??
                       RelayStatus.placeholder(
                         PowerSequenceService.kRelayPcButton,
@@ -199,7 +202,7 @@ class _ControlScreenState extends State<ControlScreen>
   // ═════════════════════════════════════════════════════════════════════════
   //  HEADER
   // ═════════════════════════════════════════════════════════════════════════
-  Widget _header(bool online) {
+  Widget _header(bool online, bool pcOn) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: Row(
@@ -219,19 +222,79 @@ class _ControlScreenState extends State<ControlScreen>
               ],
             ),
           ),
+          Row(
+            children: [
+              _cpuIndicator(pcOn),
+              const SizedBox(width: 10),
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: online ? _kGreen : _kRed,
+                  boxShadow: [
+                    BoxShadow(
+                      color: (online ? _kGreen : _kRed).withOpacity(0.65),
+                      blurRadius: 10,
+                      spreadRadius: 3,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dedicated PC/CPU indicator, distinct from the network ONLINE dot — the
+  /// blue accent identifies it as "CPU", while the ON/OFF text always
+  /// reflects the authoritative GPIO45/PLED reading (dp.pcActualOn), never
+  /// an assumption from Relay 1.
+  Widget _cpuIndicator(bool pcOn) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _kBlue.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _kBlue.withOpacity(0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Container(
-            width: 14,
-            height: 14,
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: online ? _kGreen : _kRed,
+              color: _kBlue,
               boxShadow: [
                 BoxShadow(
-                  color: (online ? _kGreen : _kRed).withOpacity(0.65),
-                  blurRadius: 10,
-                  spreadRadius: 3,
+                  color: _kBlue.withOpacity(0.6),
+                  blurRadius: 8,
+                  spreadRadius: 2,
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'CPU',
+            style: GoogleFonts.orbitron(
+              color: _kBlue,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            pcOn ? 'ON' : 'OFF',
+            style: GoogleFonts.orbitron(
+              color: pcOn ? _kGreen : _kRed,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -242,9 +305,14 @@ class _ControlScreenState extends State<ControlScreen>
   // ═════════════════════════════════════════════════════════════════════════
   //  MAIN CONTROLS — PC · SOS · SP
   // ═════════════════════════════════════════════════════════════════════════
-  Color _pcStateColor(DeviceProvider dp, RelayStatus pcMainSt) {
+  // PC power control colors always follow the real GPIO45/PLED state — this
+  // must never assume Relay 1 ON means PC ON. A failed AUTO confirmation
+  // takes priority over the raw state so the operator sees the problem
+  // instead of a falsely-confident color.
+  Color _pcStateColor(DeviceProvider dp) {
+    if (dp.isPcTransitionFailed) return _kRed;
     if (_isPCPressed || dp.isPcTransitioning) return _kAmber;
-    return pcMainSt.isOn ? _kGreen : _kRed;
+    return dp.pcActualOn ? _kGreen : _kRed;
   }
 
   Color _spStateColor(RelayStatus spSt) {
@@ -254,11 +322,10 @@ class _ControlScreenState extends State<ControlScreen>
 
   Widget _mainControls(
     DeviceProvider dp,
-    RelayStatus pcMainSt,
     RelayStatus pcButtonSt,
     RelayStatus spSt,
   ) {
-    final pcColor = _pcStateColor(dp, pcMainSt);
+    final pcColor = _pcStateColor(dp);
     final spColor = _spStateColor(spSt);
     final pcSchedule = dp.scheduleFor('auto');
     final spSchedule = dp.scheduleFor('relay10');
@@ -1065,6 +1132,42 @@ class _ControlScreenState extends State<ControlScreen>
   // ═════════════════════════════════════════════════════════════════════════
   //  ACTION HANDLERS
   // ═════════════════════════════════════════════════════════════════════════
+  void _showTransitionFailureSnack(DeviceProvider dp) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: _kRed, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                dp.pcTransitionFailureMessage ??
+                    'PC state was not confirmed after the AUTO sequence.',
+                style: GoogleFonts.orbitron(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: _kPanel,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _kRed.withOpacity(0.4)),
+        ),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'DISMISS',
+          textColor: _kRed,
+          onPressed: dp.clearPcTransitionFailure,
+        ),
+      ),
+    );
+  }
+
   Future<void> _doSOS(DeviceProvider dp) async {
     HapticFeedback.heavyImpact();
     final ok = await showDialog<bool>(

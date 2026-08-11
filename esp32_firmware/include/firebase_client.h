@@ -6,6 +6,7 @@
 #include <ArduinoJson.h>
 #include "pc_types.h"
 #include "config.h"
+#include "network_scanner.h"
 
 class FirebaseClient {
  public:
@@ -24,6 +25,11 @@ class FirebaseClient {
   bool writeDeviceConfig(const AppConfig& config);
   bool writeLogs(const String& message);
   bool clearDesiredCommands();
+
+  // Consolidated single-write LAN device inventory (called only when
+  // NetworkScanner reports a material change — never on a per-host or
+  // per-tick basis).
+  bool writeNetworkDevices(const std::vector<DiscoveredDevice>& devices, const String& subnetCidr);
 
   // Authentication utility
   bool signInWithPassword(const String& apiKey, const String& email, const String& password);

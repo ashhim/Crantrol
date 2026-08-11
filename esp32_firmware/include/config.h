@@ -23,6 +23,14 @@
 #define NETWORK_LED_PIN 48
 #define RGB_LED_PIN 46
 
+// Motherboard front-panel PLED sense input (authoritative PC ON/OFF state).
+// Input only — the ESP32 never drives this pin. Wiring: PLED(+) -> GPIO45,
+// PLED(-) -> GND. HIGH = PLED lit = PC ON. Flip PC_PLED_ACTIVE_HIGH to false
+// if your board's PLED header reads the opposite polarity.
+#define PC_PLED_PIN 45
+#define PC_PLED_ACTIVE_HIGH true
+#define PC_PLED_DEBOUNCE_MS 300
+
 // Ethernet W5500 SPI Pins
 #define ETH_MISO_PIN 12
 #define ETH_MOSI_PIN 11

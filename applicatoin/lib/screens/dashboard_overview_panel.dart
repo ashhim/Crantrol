@@ -33,6 +33,7 @@ class DashboardOverviewPanel extends StatefulWidget {
   final bool isOnline;
   final bool pcOn;
   final bool pcTransitioning;
+  final bool pcTransitionFailed;
 
   const DashboardOverviewPanel({
     required this.device,
@@ -40,6 +41,7 @@ class DashboardOverviewPanel extends StatefulWidget {
     required this.isOnline,
     required this.pcOn,
     required this.pcTransitioning,
+    this.pcTransitionFailed = false,
     super.key,
   });
 
@@ -122,14 +124,21 @@ class _DashboardOverviewPanelState extends State<DashboardOverviewPanel> {
                 child: _statTile(
                   label: 'PC STATE',
                   value:
-                      widget.pcTransitioning
-                          ? 'WORKING'
-                          : (widget.pcOn ? 'ON' : 'OFF'),
+                      widget.pcTransitionFailed
+                          ? 'FAILED'
+                          : (widget.pcTransitioning
+                              ? 'WORKING'
+                              : (widget.pcOn ? 'ON' : 'OFF')),
                   color:
-                      widget.pcTransitioning
-                          ? _kAmber
-                          : (widget.pcOn ? _kGreen : _kRed),
-                  icon: Icons.power_settings_new,
+                      widget.pcTransitionFailed
+                          ? _kRed
+                          : (widget.pcTransitioning
+                              ? _kAmber
+                              : (widget.pcOn ? _kGreen : _kRed)),
+                  icon:
+                      widget.pcTransitionFailed
+                          ? Icons.error_outline
+                          : Icons.power_settings_new,
                 ),
               ),
               const SizedBox(width: 8),

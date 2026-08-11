@@ -458,6 +458,13 @@ class DeviceStatus {
   // render the orange "working" state, not just the device that triggered it.
   final bool pcTransitionActive;
   final String pcTransitionKind;
+  final bool pcTransitionFailed;
+
+  // Authoritative PC power state, read from the motherboard PLED sense input
+  // (GPIO45) on the ESP32 — debounced in firmware. This is the source of
+  // truth for PC ON/OFF, never Relay 1.
+  final bool pcActualOn;
+  final bool pcActualStable;
 
   DeviceStatus({
     required this.deviceId,
@@ -478,6 +485,9 @@ class DeviceStatus {
     this.deviceName = '',
     this.pcTransitionActive = false,
     this.pcTransitionKind = '',
+    this.pcTransitionFailed = false,
+    this.pcActualOn = false,
+    this.pcActualStable = false,
   });
 
   factory DeviceStatus.fromJson(Map<dynamic, dynamic> json) {
@@ -533,6 +543,9 @@ class DeviceStatus {
       deviceName: json['deviceName'] ?? '',
       pcTransitionActive: _readBoolValue(pcTransitionMap?['active'], false),
       pcTransitionKind: _readStringValue(pcTransitionMap?['kind'], ''),
+      pcTransitionFailed: _readBoolValue(pcTransitionMap?['failed'], false),
+      pcActualOn: _readBoolValue(json['pcActualOn'], false),
+      pcActualStable: _readBoolValue(json['pcActualStable'], false),
     );
   }
 }
@@ -608,6 +621,35 @@ String scheduleSlotLabel(String key) {
     if (id != null) return relayDisplayName(id);
   }
   return key.toUpperCase();
+}
+
+/// One LAN host discovered by the ESP32's local ARP-based scan
+/// (devices/{id}/network/hosts/{sanitizedIp}). Synced as a single
+/// consolidated snapshot, not per-host — see NetworkScanner in firmware.
+class NetworkDevice {
+  final String ip;
+  final String mac;
+  final String hostname;
+  final bool active;
+  final int lastSeenAgoMs;
+
+  const NetworkDevice({
+    required this.ip,
+    this.mac = '',
+    this.hostname = '',
+    this.active = false,
+    this.lastSeenAgoMs = 0,
+  });
+
+  factory NetworkDevice.fromJson(Map<dynamic, dynamic> json) {
+    return NetworkDevice(
+      ip: _readStringValue(json['ip'], ''),
+      mac: _readStringValue(json['mac'], ''),
+      hostname: _readStringValue(json['hostname'], ''),
+      active: _readBoolValue(json['active'], false),
+      lastSeenAgoMs: _readIntValue(json['lastSeenAgoMs'], 0),
+    );
+  }
 }
 
 class DeviceLog {

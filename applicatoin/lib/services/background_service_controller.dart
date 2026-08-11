@@ -107,21 +107,16 @@ Future<void> _onServiceStart(ServiceInstance service) async {
   final firingSchedules = <String>{};
 
   Future<void> refresh() async {
-    final relays =
-        lastStatus?['relays'] is Map
-            ? lastStatus!['relays'] as Map
-            : const {};
-    final pcRelay =
-        relays['relay${PowerSequenceService.kRelayPcMain}'] is Map
-            ? relays['relay${PowerSequenceService.kRelayPcMain}'] as Map
-            : const {};
-    final pcOn = _readBool(pcRelay['state']);
+    // Authoritative PC state — the firmware's debounced GPIO45/PLED reading,
+    // never Relay 1.
+    final pcOn = _readBool(lastStatus?['pcActualOn']);
 
     final pcTransition =
         lastStatus?['pcTransition'] is Map
             ? lastStatus!['pcTransition'] as Map
             : const {};
     final transitioning = _readBool(pcTransition['active']);
+    final transitionFailed = _readBool(pcTransition['failed']);
 
     final heartbeatAt = _readInt(
       lastStatus?['heartbeatAt'] ?? lastStatus?['lastSeenAt'],
@@ -151,6 +146,7 @@ Future<void> _onServiceStart(ServiceInstance service) async {
     await NotificationService.showStatusNotification(
       pcOn: pcOn,
       transitioning: transitioning,
+      transitionFailed: transitionFailed,
       uptimeText: uptimeText,
       online: online,
       networkSummary: networkSummary,

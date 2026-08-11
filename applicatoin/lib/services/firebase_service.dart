@@ -114,6 +114,13 @@ class FirebaseService {
     return _database.ref('devices/$deviceId/status').onValue;
   }
 
+  // Authoritative PC power state (GPIO45/PLED, debounced in firmware) —
+  // reuses the existing status stream's underlying node rather than adding
+  // a new polling path.
+  Stream<DatabaseEvent> watchPcActualOn(String deviceId) {
+    return _database.ref('devices/$deviceId/status/pcActualOn').onValue;
+  }
+
   Stream<DatabaseEvent> watchRelayStates(String deviceId) {
     return _database.ref('devices/$deviceId/status/relays').onValue;
   }
@@ -340,11 +347,13 @@ class FirebaseService {
     String deviceId, {
     required bool active,
     String kind = '',
+    bool failed = false,
   }) async {
     try {
       await _database.ref('devices/$deviceId/status/pcTransition').set({
         'active': active,
         'kind': kind,
+        'failed': failed,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
     } catch (e) {
@@ -402,5 +411,12 @@ class FirebaseService {
         .orderByKey()
         .limitToLast(lastDays)
         .onValue;
+  }
+
+  // ── LAN device inventory (ESP32 ARP-based local scan) ────────────────────
+  // One realtime listener on the already-consolidated snapshot the firmware
+  // writes — never a per-device or per-poll read.
+  Stream<DatabaseEvent> watchNetworkDevices(String deviceId) {
+    return _database.ref('devices/$deviceId/network').onValue;
   }
 }

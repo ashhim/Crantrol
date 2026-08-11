@@ -72,6 +72,26 @@
           "uptimeMs": {
             ".validate": "newData.isNumber()"
           },
+          "pcActualOn": {
+            ".validate": "newData.isBoolean()"
+          },
+          "pcActualStable": {
+            ".validate": "newData.isBoolean()"
+          },
+          "pcTransition": {
+            "active": {
+              ".validate": "newData.isBoolean()"
+            },
+            "kind": {
+              ".validate": "newData.isString()"
+            },
+            "failed": {
+              ".validate": "newData.isBoolean()"
+            },
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            }
+          },
           "deviceName": {
             ".validate": "newData.isString()"
           },
@@ -170,6 +190,38 @@
             },
             "sessions": {
               ".validate": "newData.isNumber()"
+            }
+          }
+        },
+        "network": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "subnet": {
+            ".validate": "newData.isString()"
+          },
+          "deviceCount": {
+            ".validate": "newData.isNumber()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "hosts": {
+            "$hostKey": {
+              "ip": {
+                ".validate": "newData.isString()"
+              },
+              "mac": {
+                ".validate": "newData.isString()"
+              },
+              "hostname": {
+                ".validate": "newData.isString()"
+              },
+              "active": {
+                ".validate": "newData.isBoolean()"
+              },
+              "lastSeenAgoMs": {
+                ".validate": "newData.isNumber()"
+              }
             }
           }
         }

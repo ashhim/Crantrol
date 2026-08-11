@@ -215,6 +215,11 @@ bool FirebaseClient::writeStatus(const RuntimeState& state, const AppConfig& con
   doc["internetOk"] = state.internetAvailable;
   doc["firebaseAuthenticated"] = state.firebaseReady;
   doc["uptimeMs"] = millis();
+
+  // Authoritative PC power state from the PLED sense input (GPIO45) —
+  // debounced in firmware, never derived from Relay 1.
+  doc["pcActualOn"] = state.pcActualOn;
+  doc["pcActualStable"] = state.pcActualStable;
   doc["deviceName"] = deviceName.c_str();
   doc["deviceId"] = deviceId.c_str();
   
@@ -320,6 +325,43 @@ bool FirebaseClient::writeDeviceConfig(const AppConfig& config) {
   String path = "/devices/" + deviceId + "/config";
   String url = getDatabaseUrl(firebaseConfig.databaseURL, path);
   
+  String response;
+  return makePutRequest(url, payload, response);
+}
+
+bool FirebaseClient::writeNetworkDevices(const std::vector<DiscoveredDevice>& devices, const String& subnetCidr) {
+  if (status != FirebaseStatus::AUTHENTICATED) {
+    return false;
+  }
+
+  DynamicJsonDocument doc(MAX_JSON_DOC_SIZE);
+  doc["subnet"] = subnetCidr;
+  doc["deviceCount"] = devices.size();
+  JsonObject updatedAt = doc.createNestedObject("updatedAt");
+  updatedAt[".sv"] = "timestamp";
+
+  // One consolidated write for the whole inventory — never one write per
+  // host. Firebase keys can't contain '.', so IPs are stored dot-sanitized.
+  JsonObject hostsObj = doc.createNestedObject("hosts");
+  uint32_t now = millis();
+  for (const auto& device : devices) {
+    String key = device.ip.toString();
+    key.replace(".", "_");
+
+    JsonObject h = hostsObj.createNestedObject(key);
+    h["ip"] = device.ip.toString();
+    h["mac"] = device.mac;
+    h["hostname"] = device.hostname;
+    h["active"] = device.active;
+    h["lastSeenAgoMs"] = (now >= device.lastSeenMs) ? (now - device.lastSeenMs) : 0;
+  }
+
+  String payload;
+  serializeJson(doc, payload);
+
+  String path = "/devices/" + deviceId + "/network";
+  String url = getDatabaseUrl(firebaseConfig.databaseURL, path);
+
   String response;
   return makePutRequest(url, payload, response);
 }

@@ -104,6 +104,11 @@ struct RuntimeState {
   uint64_t lastSeenAt = 0;
   uint64_t heartbeatAt = 0;
   uint32_t uptimeMs = 0;
+
+  // Authoritative PC power state from the motherboard PLED sense input
+  // (GPIO45) — debounced. This is NOT derived from Relay 1.
+  bool pcActualOn = false;
+  bool pcActualStable = false;
 };
 
 struct FirebaseCommand {

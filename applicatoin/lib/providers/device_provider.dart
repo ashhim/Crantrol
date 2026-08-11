@@ -38,6 +38,19 @@ class DeviceProvider extends ChangeNotifier {
   // ── AUTO sequence state (local — mirrors the Firebase-synced pcTransition
   //    flag so this device's own UI updates instantly, before the round trip) ──
   bool _localPcTransitioning = false;
+  bool _localPcTransitionFailed = false;
+  String? _pcTransitionFailureMessage;
+
+  // Broadcasts every pcActualOn value seen on the existing status stream —
+  // lets runAutoPowerSequence wait for GPIO45 confirmation without opening a
+  // second Firebase listener or polling.
+  final StreamController<bool> _pcActualOnController =
+      StreamController<bool>.broadcast();
+
+  // ── LAN device inventory (Dashboard "DEVICES" section) ──────────────────
+  StreamSubscription<DatabaseEvent>? _networkDevicesSubscription;
+  List<NetworkDevice> _networkDevices = [];
+  String _networkSubnet = '';
 
   // ── Scheduler state ─────────────────────────────────────────────────────
   // Keys: 'relay1'..'relay8', 'relay10' (SP), 'auto' (PC/AUTO). One active
@@ -71,6 +84,31 @@ class DeviceProvider extends ChangeNotifier {
   /// device started it. Drives the orange "working" state in the UI.
   bool get isPcTransitioning =>
       _localPcTransitioning || (_deviceStatus?.pcTransitionActive ?? false);
+
+  /// True if the last AUTO sequence completed its relay steps but GPIO45
+  /// never confirmed the expected PC state within the timeout — either
+  /// detected locally on this device, or synced from Firebase because
+  /// another logged-in device triggered the failed run.
+  bool get isPcTransitionFailed =>
+      _localPcTransitionFailed || (_deviceStatus?.pcTransitionFailed ?? false);
+
+  String? get pcTransitionFailureMessage => _pcTransitionFailureMessage;
+
+  void clearPcTransitionFailure() {
+    _localPcTransitionFailed = false;
+    _pcTransitionFailureMessage = null;
+    notifyListeners();
+  }
+
+  /// Authoritative PC ON/OFF state — read from the motherboard PLED sense
+  /// input (GPIO45) via the firmware's debounced status field. Never derived
+  /// from Relay 1.
+  bool get pcActualOn => _deviceStatus?.pcActualOn ?? false;
+  bool get pcActualStable => _deviceStatus?.pcActualStable ?? false;
+
+  // ── LAN device inventory getters ─────────────────────────────────────────
+  List<NetworkDevice> get networkDevices => _networkDevices;
+  String get networkSubnet => _networkSubnet;
 
   // ── Scheduler getters ────────────────────────────────────────────────────
   ScheduleEntry? scheduleFor(String key) => _schedules[key];
@@ -208,6 +246,8 @@ class DeviceProvider extends ChangeNotifier {
     _usageSubscription = null;
     _scheduleExecutorTimer?.cancel();
     _scheduleExecutorTimer = null;
+    _networkDevicesSubscription?.cancel();
+    _networkDevicesSubscription = null;
   }
 
   Map<String, dynamic> _mapSnapshot(dynamic value) {
@@ -261,6 +301,9 @@ class DeviceProvider extends ChangeNotifier {
     _lastStatusEventMs = DateTime.now().millisecondsSinceEpoch;
 
     _deviceStatus = DeviceStatus.fromJson(status);
+    if (!_pcActualOnController.isClosed) {
+      _pcActualOnController.add(_deviceStatus!.pcActualOn);
+    }
     if (_selectedDevice != null) {
       final relays = Device.applyStatusToRelays(
         _selectedDevice!.relays,
@@ -384,6 +427,7 @@ class DeviceProvider extends ChangeNotifier {
         _subscribeToRelayTimers(deviceId);
         _subscribeToSchedules(deviceId);
         _subscribeToUsage(deviceId);
+        _subscribeToNetworkDevices(deviceId);
 
         // Locally checks active schedules against the current time and
         // fires any that are due — never polls Firebase, only reads the
@@ -621,6 +665,47 @@ class DeviceProvider extends ChangeNotifier {
         );
   }
 
+  // ── Network devices subscription (Dashboard "DEVICES" section) ──────────
+  // One realtime listener on the ESP32's already-consolidated device-list
+  // snapshot — the firmware itself decides when to write it (material
+  // change only), so this stream just renders whatever arrives.
+  void _subscribeToNetworkDevices(String deviceId) {
+    _networkDevicesSubscription?.cancel();
+    _networkDevicesSubscription = _firebaseService
+        .watchNetworkDevices(deviceId)
+        .listen(
+          (event) {
+            final value = event.snapshot.value;
+            if (value is Map) {
+              final map = Map<dynamic, dynamic>.from(value);
+              _networkSubnet = map['subnet'] is String ? map['subnet'] as String : '';
+              final hostsValue = map['hosts'];
+              final devices = <NetworkDevice>[];
+              if (hostsValue is Map) {
+                for (final entry in hostsValue.entries) {
+                  if (entry.value is Map) {
+                    devices.add(
+                      NetworkDevice.fromJson(
+                        Map<dynamic, dynamic>.from(entry.value as Map),
+                      ),
+                    );
+                  }
+                }
+              }
+              devices.sort((a, b) => a.ip.compareTo(b.ip));
+              _networkDevices = devices;
+            } else {
+              _networkSubnet = '';
+              _networkDevices = [];
+            }
+            notifyListeners();
+          },
+          onError: (error) {
+            _logger.e('Error watching network devices: $error');
+          },
+        );
+  }
+
   // ── Timer save helpers ─────────────────────────────────────────────────
   void _saveTimerStart(String deviceId, int relayId) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -763,24 +848,25 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
-  /// AUTO: inspects the current PC state (Relay 1 — the authoritative PC
-  /// power indicator) and runs the matching ON or OFF sequence. Never
-  /// blindly toggles. Safe to call repeatedly; re-entrant calls are ignored
-  /// while a sequence is already running.
+  /// AUTO: inspects the current PC state from the authoritative GPIO45/PLED
+  /// sense input (never Relay 1) and runs the matching ON or OFF sequence.
+  /// After the sequence completes, waits for GPIO45 to confirm the expected
+  /// state; if it never does within the timeout, exposes a distinct failure
+  /// state instead of silently reporting success. Safe to call repeatedly;
+  /// re-entrant calls are ignored while a sequence is already running.
   Future<void> runAutoPowerSequence(String deviceId) async {
     final device = _selectedDevice;
     if (device == null || _localPcTransitioning) {
       return;
     }
 
-    final pcRelay = device.relays.firstWhere(
-      (relay) => relay.id == PowerSequenceService.kRelayPcMain,
-      orElse: () => Relay.placeholder(PowerSequenceService.kRelayPcMain),
-    );
-    final pcCurrentlyOn = pcRelay.isOn;
+    final pcCurrentlyOn = pcActualOn;
+    final expectedOn = !pcCurrentlyOn;
     final kind = PowerSequenceService.kindFor(pcCurrentlyOn: pcCurrentlyOn);
 
     _localPcTransitioning = true;
+    _localPcTransitionFailed = false;
+    _pcTransitionFailureMessage = null;
     notifyListeners();
     unawaited(
       _firebaseService.setPcTransition(deviceId, active: true, kind: kind),
@@ -795,10 +881,28 @@ class DeviceProvider extends ChangeNotifier {
         }
         await setRelayStateDirect(deviceId, step.relayId, step.turnOn);
       }
+
+      final confirmed = await PowerSequenceService.waitForConfirmation(
+        expectedOn: expectedOn,
+        currentPcActualOn: () => pcActualOn,
+        pcActualOnStream: _pcActualOnController.stream,
+      );
+      if (!confirmed) {
+        _localPcTransitionFailed = true;
+        _pcTransitionFailureMessage =
+            'PC did not confirm turning ${expectedOn ? 'ON' : 'OFF'} '
+            '(GPIO45/PLED). Check the hardware.';
+      }
     } finally {
       _localPcTransitioning = false;
       notifyListeners();
-      unawaited(_firebaseService.setPcTransition(deviceId, active: false));
+      unawaited(
+        _firebaseService.setPcTransition(
+          deviceId,
+          active: false,
+          failed: _localPcTransitionFailed,
+        ),
+      );
     }
   }
 
@@ -868,6 +972,7 @@ class DeviceProvider extends ChangeNotifier {
     }
     _pendingRelayTimers.clear();
     _cancelDeviceSubscriptions();
+    _pcActualOnController.close();
     super.dispose();
   }
 }
